@@ -190,7 +190,7 @@ export class MessageMonitorService {
             last_message: parsed.message.substring(0, 100),
             unread_count: 1,
             is_pinned: false,
-            action_required: openAIService.detectActionRequired(parsed.message),
+            action_required: false,
           });
           console.log(`💬 Created new conversation: ${conversation.id}${parsed.platformConversationHash ? ' with hash: ' + parsed.platformConversationHash : ''}`);
           // #region agent log
@@ -198,11 +198,10 @@ export class MessageMonitorService {
           // #endregion
         } else {
           // Update existing conversation
-          const actionRequired = openAIService.detectActionRequired(parsed.message);
           await databaseService.updateConversation(conversation.id, {
             last_message: parsed.message.substring(0, 100),
             unread_count: conversation.unread_count + 1,
-            action_required: actionRequired,
+            action_required: false,
           });
           // #region agent log
           if (parsed.platform === 'airbnb') { fetch('http://127.0.0.1:7244/ingest/680b2461-0ef0-449d-bad7-729c1a1ce6e7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'message-monitor.service.ts:EXISTING_CONV',message:'MATCHED existing conversation',data:{conversationId:conversation.id,hash:parsed.platformConversationHash,threadId:parsed.threadId,name:parsed.customerName,msgPreview:parsed.message.substring(0,150)},timestamp:Date.now(),hypothesisId:'H_CONFIRM'})}).catch(()=>{}); }

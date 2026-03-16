@@ -66,16 +66,15 @@ export class WhatsAppMonitorService {
           last_message: messageContent.substring(0, 100),
           unread_count: 1,
           is_pinned: false,
-          action_required: openAIService.detectActionRequired(messageContent),
+          action_required: false,
         });
         console.log(`💬 Created new WhatsApp conversation: ${conversation.id}`);
       } else {
         // Update existing conversation
-        const actionRequired = openAIService.detectActionRequired(messageContent);
         await databaseService.updateConversation(conversation.id, {
           last_message: messageContent.substring(0, 100),
           unread_count: conversation.unread_count + 1,
-          action_required: actionRequired,
+          action_required: false,
         });
       }
 

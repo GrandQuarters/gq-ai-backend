@@ -24,9 +24,11 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 
 // Middleware
-const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
-console.log('🌐 CORS: Allowing all origins (FRONTEND_URL=' + frontendUrl + ')');
-app.use(cors());
+const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000')
+  .split(',')
+  .map((u) => u.trim().replace(/\/+$/, ''));
+console.log('🌐 CORS allowed origins:', allowedOrigins);
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json());
 
 // Health check
@@ -198,6 +200,58 @@ app.post('/api/messages/send', async (req, res) => {
   } catch (error) {
     console.error('❌ Error sending message:', error);
     res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
+// Generate AI response for a conversation (re-process as if message just arrived)
+app.post('/api/conversations/:id/generate-ai', async (req, res) => {
+  try {
+    const conversationId = req.params.id;
+
+    const conversations = await databaseService.getConversations();
+    const conversation = conversations.find((c) => c.id === conversationId);
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    const contacts = await databaseService.getContacts();
+    const contact = contacts.find((c) => c.id === conversation.contact_id);
+    if (!contact) {
+      return res.status(404).json({ error: 'Contact not found' });
+    }
+
+    const allMessages = await databaseService.getMessagesByConversation(conversationId);
+    if (allMessages.length === 0) {
+      return res.status(400).json({ error: 'No messages in conversation' });
+    }
+
+    const lastGuestMsg = [...allMessages].reverse().find((m) => !m.is_own);
+    const guestContext: import('./services/openai.service').GuestContext = {
+      guestName: contact.name,
+      guestPhone: contact.phone_number || '',
+      guestEmail: contact.email || '',
+      guestLanguage: 'Englisch',
+      numberOfGuests: '',
+      apartmentName: conversation.property_name || '',
+      apartmentAddress: '',
+      bookingPlatform: conversation.platform,
+      bookingId: '',
+      checkinDate: '',
+      checkinTime: '15:00',
+      checkoutDate: '',
+      checkoutTime: '11:00',
+      numberOfNights: '',
+      stayStatus: 'unknown',
+    };
+
+    console.log(`🤖 Manually generating AI response for conversation ${conversationId} (${contact.name})`);
+    const aiResponse = await openAIService.generateResponse(guestContext, allMessages);
+    console.log('🤖 AI Response:', aiResponse);
+
+    res.json({ aiSuggestion: aiResponse });
+  } catch (error: any) {
+    console.error('❌ Error generating AI response:', error);
+    res.status(500).json({ error: error.message || 'Failed to generate AI response' });
   }
 });
 
