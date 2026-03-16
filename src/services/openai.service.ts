@@ -471,6 +471,8 @@ Biete wenn möglich Optionen an.
 
 Erwähne niemals Platzhalter oder interne Informationen.
 
+WICHTIG – Schreibstil: Verwende NIEMALS Gedankenstriche (– oder —) mitten im Satz. Kein Halbgeviertstrich, kein Geviertstrich, kein Bindestrich als Gedankenstrich. Formuliere stattdessen kurze, klare Sätze oder nutze Kommas, Punkte und Doppelpunkte. Gedankenstriche wirken künstlich und sind ein typisches KI-Erkennungsmerkmal. Das gilt für alle Sprachen.
+
 Antworte nur mit der Nachricht an den Gast.`;
 
 export interface GuestContext {
