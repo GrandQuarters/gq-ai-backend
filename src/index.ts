@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { WebSocketServer } from 'ws';
 import { gmailService } from './services/gmail.service';
-import { supabaseDatabaseService as databaseService } from './services/supabase-database.service';
+import { databaseService } from './services/database.service';
 import { messageMonitorService } from './services/message-monitor.service';
 import { openAIService } from './services/openai.service';
 import { whatsappService } from './services/whatsapp.service';
@@ -49,7 +49,8 @@ app.get('/api/conversations', async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('❌ Error fetching conversations:', error);
-    res.status(500).json({ error: 'Failed to fetch conversations' });
+    // Return empty array instead of error object so frontend doesn't crash
+    res.status(200).json([]);
   }
 });
 
@@ -60,6 +61,7 @@ app.get('/api/conversations/:id/messages', async (req, res) => {
     const result = messages.map((msg) => ({
       id: msg.id,
       content: msg.content,
+      originalContent: msg.original_content || null,
       senderId: msg.sender_id,
       senderName: msg.sender_name,
       senderAvatar: msg.sender_avatar,
@@ -72,7 +74,25 @@ app.get('/api/conversations/:id/messages', async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('❌ Error fetching messages:', error);
-    res.status(500).json({ error: 'Failed to fetch messages' });
+    res.status(200).json([]);
+  }
+});
+
+// Get raw email data for a message
+app.get('/api/messages/:id/raw', async (req, res) => {
+  try {
+    const message = await databaseService.getMessageById(req.params.id);
+    if (!message) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+    if (!message.raw_email_data) {
+      return res.json({ hasRawData: false });
+    }
+    const rawData = JSON.parse(message.raw_email_data);
+    return res.json({ hasRawData: true, ...rawData });
+  } catch (error) {
+    console.error('❌ Error fetching raw email:', error);
+    res.status(500).json({ error: 'Failed to fetch raw email data' });
   }
 });
 
@@ -147,6 +167,8 @@ app.post('/api/messages/send', async (req, res) => {
     const savedMessage = await databaseService.createMessage({
       conversation_id: conversationId,
       content,
+      original_content: null,
+      raw_email_data: null,
       sender_id: 'admin',
       sender_name: 'Admin',
       sender_avatar: '/Logos/Download.png',
@@ -179,7 +201,7 @@ app.get('/api/action-required', async (req, res) => {
     res.json(actionRequiredIds);
   } catch (error) {
     console.error('❌ Error fetching action required:', error);
-    res.status(500).json({ error: 'Failed to fetch action required' });
+    res.status(200).json([]);
   }
 });
 

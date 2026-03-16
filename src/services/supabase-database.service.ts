@@ -62,16 +62,22 @@ export interface AIResponse {
 
 export class SupabaseDatabaseService {
   private supabase: SupabaseClient;
+  private isConnected: boolean = false;
 
   constructor() {
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
-      throw new Error('❌ Supabase credentials not configured! Add SUPABASE_URL and SUPABASE_SERVICE_KEY to .env');
+      console.error('⚠️  Supabase credentials not configured! Add SUPABASE_URL and SUPABASE_SERVICE_KEY to .env');
+      console.error('⚠️  Backend will run but database operations will fail.');
+      // Create a dummy client to avoid null errors -- operations will fail gracefully
+      this.supabase = createClient('https://placeholder.supabase.co', 'placeholder');
+      return;
     }
 
     this.supabase = createClient(supabaseUrl, supabaseKey);
+    this.isConnected = true;
     console.log('✅ Supabase client initialized');
   }
 

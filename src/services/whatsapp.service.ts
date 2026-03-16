@@ -247,9 +247,7 @@ export class WhatsAppService {
    */
   async sendCancellationDE(
     to: string,
-    guestName: string,
-    bookingReference: string,
-    propertyName: string
+    guestName: string
   ): Promise<boolean> {
     return this.sendTemplate(
       to,
@@ -260,8 +258,6 @@ export class WhatsAppService {
           type: 'body',
           parameters: [
             { type: 'text', text: guestName },
-            { type: 'text', text: bookingReference },
-            { type: 'text', text: propertyName },
           ],
         },
       ]
@@ -273,9 +269,7 @@ export class WhatsAppService {
    */
   async sendCancellationEN(
     to: string,
-    guestName: string,
-    bookingReference: string,
-    propertyName: string
+    guestName: string
   ): Promise<boolean> {
     return this.sendTemplate(
       to,
@@ -286,8 +280,6 @@ export class WhatsAppService {
           type: 'body',
           parameters: [
             { type: 'text', text: guestName },
-            { type: 'text', text: bookingReference },
-            { type: 'text', text: propertyName },
           ],
         },
       ]
@@ -303,10 +295,7 @@ export class WhatsAppService {
    */
   async sendCheckOutDE(
     to: string,
-    guestName: string,
-    propertyName: string,
-    checkOutDate: string,
-    checkOutTime: string
+    guestName: string
   ): Promise<boolean> {
     return this.sendTemplate(
       to,
@@ -317,9 +306,6 @@ export class WhatsAppService {
           type: 'body',
           parameters: [
             { type: 'text', text: guestName },
-            { type: 'text', text: propertyName },
-            { type: 'text', text: checkOutDate },
-            { type: 'text', text: checkOutTime },
           ],
         },
       ]
@@ -331,10 +317,7 @@ export class WhatsAppService {
    */
   async sendCheckOutEN(
     to: string,
-    guestName: string,
-    propertyName: string,
-    checkOutDate: string,
-    checkOutTime: string
+    guestName: string
   ): Promise<boolean> {
     return this.sendTemplate(
       to,
@@ -345,9 +328,6 @@ export class WhatsAppService {
           type: 'body',
           parameters: [
             { type: 'text', text: guestName },
-            { type: 'text', text: propertyName },
-            { type: 'text', text: checkOutDate },
-            { type: 'text', text: checkOutTime },
           ],
         },
       ]
@@ -363,8 +343,7 @@ export class WhatsAppService {
    */
   async sendFirstNightDE(
     to: string,
-    guestName: string,
-    propertyName: string
+    guestName: string
   ): Promise<boolean> {
     return this.sendTemplate(
       to,
@@ -375,7 +354,6 @@ export class WhatsAppService {
           type: 'body',
           parameters: [
             { type: 'text', text: guestName },
-            { type: 'text', text: propertyName },
           ],
         },
       ]
@@ -387,8 +365,7 @@ export class WhatsAppService {
    */
   async sendFirstNightEN(
     to: string,
-    guestName: string,
-    propertyName: string
+    guestName: string
   ): Promise<boolean> {
     return this.sendTemplate(
       to,
@@ -399,7 +376,6 @@ export class WhatsAppService {
           type: 'body',
           parameters: [
             { type: 'text', text: guestName },
-            { type: 'text', text: propertyName },
           ],
         },
       ]
@@ -415,11 +391,7 @@ export class WhatsAppService {
    */
   async sendCheckInPersoenlichDE(
     to: string,
-    guestName: string,
-    propertyName: string,
-    checkInDate: string,
-    checkInTime: string,
-    address: string
+    guestName: string
   ): Promise<boolean> {
     return this.sendTemplate(
       to,
@@ -430,10 +402,6 @@ export class WhatsAppService {
           type: 'body',
           parameters: [
             { type: 'text', text: guestName },
-            { type: 'text', text: propertyName },
-            { type: 'text', text: checkInDate },
-            { type: 'text', text: checkInTime },
-            { type: 'text', text: address },
           ],
         },
       ]
@@ -445,11 +413,7 @@ export class WhatsAppService {
    */
   async sendCheckInPersoenlichEN(
     to: string,
-    guestName: string,
-    propertyName: string,
-    checkInDate: string,
-    checkInTime: string,
-    address: string
+    guestName: string
   ): Promise<boolean> {
     return this.sendTemplate(
       to,
@@ -460,10 +424,6 @@ export class WhatsAppService {
           type: 'body',
           parameters: [
             { type: 'text', text: guestName },
-            { type: 'text', text: propertyName },
-            { type: 'text', text: checkInDate },
-            { type: 'text', text: checkInTime },
-            { type: 'text', text: address },
           ],
         },
       ]
@@ -471,37 +431,27 @@ export class WhatsAppService {
   }
 
   // =============================================================================
-  // CHECK-IN TEMPLATES - SELLERGASSE
+  // CHECK-IN TEMPLATES - SEILERGASSE
   // =============================================================================
 
   /**
-   * Send Sellergasse check-in instructions (German)
+   * Send Seilergasse check-in instructions (German)
    */
-  async sendCheckInSellergasseDE(
+  async sendCheckInSeilergasseDE(
     to: string,
     guestName: string,
-    checkInDate: string,
-    checkInTime: string,
-    doorCode: string,
-    apartmentNumber: string,
-    wifiName: string,
-    wifiPassword: string
+    doorCode: string
   ): Promise<boolean> {
     return this.sendTemplate(
       to,
-      'checkin_sellergasse_de',
+      'checkin_seilergasse_de',
       'de',
       [
         {
           type: 'body',
           parameters: [
             { type: 'text', text: guestName },
-            { type: 'text', text: checkInDate },
-            { type: 'text', text: checkInTime },
             { type: 'text', text: doorCode },
-            { type: 'text', text: apartmentNumber },
-            { type: 'text', text: wifiName },
-            { type: 'text', text: wifiPassword },
           ],
         },
       ]
@@ -509,33 +459,23 @@ export class WhatsAppService {
   }
 
   /**
-   * Send Sellergasse check-in instructions (English)
+   * Send Seilergasse check-in instructions (English)
    */
-  async sendCheckInSellergasseEN(
+  async sendCheckInSeilergasseEN(
     to: string,
     guestName: string,
-    checkInDate: string,
-    checkInTime: string,
-    doorCode: string,
-    apartmentNumber: string,
-    wifiName: string,
-    wifiPassword: string
+    doorCode: string
   ): Promise<boolean> {
     return this.sendTemplate(
       to,
-      'checkin_sellergasse_en',
+      'checkin_seilergasse_en',
       'en',
       [
         {
           type: 'body',
           parameters: [
             { type: 'text', text: guestName },
-            { type: 'text', text: checkInDate },
-            { type: 'text', text: checkInTime },
             { type: 'text', text: doorCode },
-            { type: 'text', text: apartmentNumber },
-            { type: 'text', text: wifiName },
-            { type: 'text', text: wifiPassword },
           ],
         },
       ]
@@ -552,11 +492,7 @@ export class WhatsAppService {
   async sendCheckInRadetzkyTop56DE(
     to: string,
     guestName: string,
-    checkInDate: string,
-    checkInTime: string,
-    doorCode: string,
-    wifiName: string,
-    wifiPassword: string
+    doorCode: string
   ): Promise<boolean> {
     return this.sendTemplate(
       to,
@@ -567,11 +503,7 @@ export class WhatsAppService {
           type: 'body',
           parameters: [
             { type: 'text', text: guestName },
-            { type: 'text', text: checkInDate },
-            { type: 'text', text: checkInTime },
             { type: 'text', text: doorCode },
-            { type: 'text', text: wifiName },
-            { type: 'text', text: wifiPassword },
           ],
         },
       ]
@@ -584,11 +516,7 @@ export class WhatsAppService {
   async sendCheckInRadetzkyTop56EN(
     to: string,
     guestName: string,
-    checkInDate: string,
-    checkInTime: string,
-    doorCode: string,
-    wifiName: string,
-    wifiPassword: string
+    doorCode: string
   ): Promise<boolean> {
     return this.sendTemplate(
       to,
@@ -599,11 +527,7 @@ export class WhatsAppService {
           type: 'body',
           parameters: [
             { type: 'text', text: guestName },
-            { type: 'text', text: checkInDate },
-            { type: 'text', text: checkInTime },
             { type: 'text', text: doorCode },
-            { type: 'text', text: wifiName },
-            { type: 'text', text: wifiPassword },
           ],
         },
       ]
@@ -620,11 +544,7 @@ export class WhatsAppService {
   async sendCheckInRadetzkyTop29DE(
     to: string,
     guestName: string,
-    checkInDate: string,
-    checkInTime: string,
-    doorCode: string,
-    wifiName: string,
-    wifiPassword: string
+    doorCode: string
   ): Promise<boolean> {
     return this.sendTemplate(
       to,
@@ -635,11 +555,7 @@ export class WhatsAppService {
           type: 'body',
           parameters: [
             { type: 'text', text: guestName },
-            { type: 'text', text: checkInDate },
-            { type: 'text', text: checkInTime },
             { type: 'text', text: doorCode },
-            { type: 'text', text: wifiName },
-            { type: 'text', text: wifiPassword },
           ],
         },
       ]
@@ -652,11 +568,7 @@ export class WhatsAppService {
   async sendCheckInRadetzkyTop29EN(
     to: string,
     guestName: string,
-    checkInDate: string,
-    checkInTime: string,
-    doorCode: string,
-    wifiName: string,
-    wifiPassword: string
+    doorCode: string
   ): Promise<boolean> {
     return this.sendTemplate(
       to,
@@ -667,11 +579,7 @@ export class WhatsAppService {
           type: 'body',
           parameters: [
             { type: 'text', text: guestName },
-            { type: 'text', text: checkInDate },
-            { type: 'text', text: checkInTime },
             { type: 'text', text: doorCode },
-            { type: 'text', text: wifiName },
-            { type: 'text', text: wifiPassword },
           ],
         },
       ]
@@ -688,11 +596,7 @@ export class WhatsAppService {
   async sendCheckInRadetzkyTop19DE(
     to: string,
     guestName: string,
-    checkInDate: string,
-    checkInTime: string,
-    doorCode: string,
-    wifiName: string,
-    wifiPassword: string
+    doorCode: string
   ): Promise<boolean> {
     return this.sendTemplate(
       to,
@@ -703,11 +607,7 @@ export class WhatsAppService {
           type: 'body',
           parameters: [
             { type: 'text', text: guestName },
-            { type: 'text', text: checkInDate },
-            { type: 'text', text: checkInTime },
             { type: 'text', text: doorCode },
-            { type: 'text', text: wifiName },
-            { type: 'text', text: wifiPassword },
           ],
         },
       ]
@@ -720,11 +620,7 @@ export class WhatsAppService {
   async sendCheckInRadetzkyTop19EN(
     to: string,
     guestName: string,
-    checkInDate: string,
-    checkInTime: string,
-    doorCode: string,
-    wifiName: string,
-    wifiPassword: string
+    doorCode: string
   ): Promise<boolean> {
     return this.sendTemplate(
       to,
@@ -735,11 +631,7 @@ export class WhatsAppService {
           type: 'body',
           parameters: [
             { type: 'text', text: guestName },
-            { type: 'text', text: checkInDate },
-            { type: 'text', text: checkInTime },
             { type: 'text', text: doorCode },
-            { type: 'text', text: wifiName },
-            { type: 'text', text: wifiPassword },
           ],
         },
       ]
@@ -756,12 +648,9 @@ export class WhatsAppService {
   async sendCheckInRadetzkystr1D2DDE(
     to: string,
     guestName: string,
-    checkInDate: string,
-    checkInTime: string,
-    doorCode: string,
+    floor: string,
     apartmentNumber: string,
-    wifiName: string,
-    wifiPassword: string
+    doorCode: string
   ): Promise<boolean> {
     return this.sendTemplate(
       to,
@@ -772,12 +661,9 @@ export class WhatsAppService {
           type: 'body',
           parameters: [
             { type: 'text', text: guestName },
-            { type: 'text', text: checkInDate },
-            { type: 'text', text: checkInTime },
-            { type: 'text', text: doorCode },
+            { type: 'text', text: floor },
             { type: 'text', text: apartmentNumber },
-            { type: 'text', text: wifiName },
-            { type: 'text', text: wifiPassword },
+            { type: 'text', text: doorCode },
           ],
         },
       ]
@@ -790,12 +676,9 @@ export class WhatsAppService {
   async sendCheckInRadetzkystr1D2DEN(
     to: string,
     guestName: string,
-    checkInDate: string,
-    checkInTime: string,
-    doorCode: string,
+    floor: string,
     apartmentNumber: string,
-    wifiName: string,
-    wifiPassword: string
+    doorCode: string
   ): Promise<boolean> {
     return this.sendTemplate(
       to,
@@ -806,12 +689,9 @@ export class WhatsAppService {
           type: 'body',
           parameters: [
             { type: 'text', text: guestName },
-            { type: 'text', text: checkInDate },
-            { type: 'text', text: checkInTime },
-            { type: 'text', text: doorCode },
+            { type: 'text', text: floor },
             { type: 'text', text: apartmentNumber },
-            { type: 'text', text: wifiName },
-            { type: 'text', text: wifiPassword },
+            { type: 'text', text: doorCode },
           ],
         },
       ]
@@ -828,9 +708,8 @@ export class WhatsAppService {
   async sendGuestRegistrationReminderDE(
     to: string,
     guestName: string,
-    propertyName: string,
     guestRegistrationLink: string,
-    checkInDate: string
+    city: string
   ): Promise<boolean> {
     return this.sendTemplate(
       to,
@@ -841,9 +720,8 @@ export class WhatsAppService {
           type: 'body',
           parameters: [
             { type: 'text', text: guestName },
-            { type: 'text', text: propertyName },
             { type: 'text', text: guestRegistrationLink },
-            { type: 'text', text: checkInDate },
+            { type: 'text', text: city },
           ],
         },
       ]
@@ -856,9 +734,8 @@ export class WhatsAppService {
   async sendGuestRegistrationReminderEN(
     to: string,
     guestName: string,
-    propertyName: string,
     guestRegistrationLink: string,
-    checkInDate: string
+    city: string
   ): Promise<boolean> {
     return this.sendTemplate(
       to,
@@ -869,9 +746,8 @@ export class WhatsAppService {
           type: 'body',
           parameters: [
             { type: 'text', text: guestName },
-            { type: 'text', text: propertyName },
             { type: 'text', text: guestRegistrationLink },
-            { type: 'text', text: checkInDate },
+            { type: 'text', text: city },
           ],
         },
       ]

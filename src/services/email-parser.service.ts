@@ -11,6 +11,7 @@ export interface ParsedMessage {
   timestamp: Date;
   platformConversationHash?: string; // Unique hash from platform (e.g., Airbnb)
   replyToEmail?: string; // The exact email to reply to
+  propertyName?: string; // Property name extracted from subject (for safe conversation merging)
 }
 
 export class EmailParserService {
@@ -21,11 +22,13 @@ export class EmailParserService {
     let cleanMessage = body;
     let platformConversationHash: string | undefined = undefined;
     let replyToEmail: string | undefined = undefined;
+    let propertyName: string | undefined = undefined;
 
     switch (platform) {
       case 'airbnb':
         customerName = this.extractAirbnbName(subject, body);
         cleanMessage = this.cleanAirbnbMessage(body);
+        propertyName = this.extractPropertyName(subject);
         // Extract hash from Reply-To header (not From header!)
         const airbnbData = this.extractAirbnbHash(replyTo || from);
         platformConversationHash = airbnbData.hash;
@@ -40,6 +43,9 @@ export class EmailParserService {
         platformConversationHash = bookingData.hash;
         replyToEmail = bookingData.email;
         console.log('🔍 Booking.com - Reply-To:', replyTo, '→ Hash:', bookingData.hash, 'Email:', bookingData.email);
+        // #region agent log
+        fetch('http://127.0.0.1:7244/ingest/680b2461-0ef0-449d-bad7-729c1a1ce6e7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'email-parser.service.ts:BOOKING_PARSE',message:'Booking.com parsing details',data:{subject,from,replyTo,extractedName:customerName,extractedMsg:cleanMessage.substring(0,300),rawBodyFirst500:body.substring(0,500),rawBodyLast300:body.substring(Math.max(0,body.length-300))},timestamp:Date.now(),hypothesisId:'BOOKING'})}).catch(()=>{});
+        // #endregion
         break;
       case 'expedia':
         customerName = this.extractExpediaName(subject, body);
@@ -76,7 +82,20 @@ export class EmailParserService {
       timestamp,
       platformConversationHash,
       replyToEmail,
+      propertyName,
     };
+  }
+
+  // Extract property name from Airbnb subject line
+  // Subject format: "RE: Buchung für „Elegant & Lebhaft | Erlebe urbanes Stadtflair", 18. Okt. – 11. Jän."
+  private extractPropertyName(subject: string): string | undefined {
+    // Match text between „ and " (German-style quotes used by Airbnb)
+    const match = subject.match(/\u201E(.+?)\u201C/);
+    if (match) return match[1].trim();
+    // Fallback: match text between regular quotes
+    const fallback = subject.match(/[""„](.+?)[""]/);
+    if (fallback) return fallback[1].trim();
+    return undefined;
   }
 
   private extractAirbnbHash(fromHeader: string): { hash: string; email: string } {
@@ -134,43 +153,95 @@ export class EmailParserService {
   }
 
   private extractAirbnbName(subject: string, body: string): string {
-    // Airbnb emails have the name right before "Buchende Person" or as first line
-    
-    // Look for name before "Buchende Person" (German) or "Guest" (English)
-    const nameMatch = body.match(/^([A-Za-zÄÖÜäöüß\s]+)[\r\n]+(?:Buchende Person|Guest)/m);
-    if (nameMatch) return nameMatch[1].trim();
+    // Airbnb email body format (plain text):
+    //    GRAHAM            <-- name (indented, often ALL CAPS)
+    //    (blank line)
+    //    Buchende Person   <-- anchor (indented)
+    //    (blank line)
+    //    message text...
+    //
+    // The name line and "Buchende Person" are separated by whitespace-only lines.
+    // We need to find the line just before "Buchende Person" that contains actual text.
 
-    // Try subject: "Buchung für ..." or "Reservation for ..."
-    const subjectMatch = subject.match(/(?:message|nachricht|booking|buchung) (?:from|von|for|für) (.+?)(?:,|\||$)/i);
-    if (subjectMatch) return subjectMatch[1].trim();
-
-    // Try to find name at the start of email body
-    const lines = body.split('\n').filter(l => l.trim());
-    if (lines[0] && lines[0].length < 50 && lines[0].length > 2) {
-      return lines[0].trim();
+    // Strategy: find first "Buchende Person" or "Guest" marker, then look backwards for the name
+    const lines = body.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      if (/^\s*(?:Buchende Person|Guest)\s*$/i.test(lines[i])) {
+        // Walk backwards from this line to find the name (skip blank/whitespace-only lines)
+        for (let j = i - 1; j >= 0; j--) {
+          const candidate = lines[j].trim();
+          if (candidate.length > 0 && candidate.length < 60) {
+            // Skip lines that are clearly not names (URLs, tracking, boilerplate)
+            if (candidate.startsWith('http') || candidate.startsWith('%') || candidate.startsWith('[')) continue;
+            if (/kommuniziere|always communicate|buchung für|reservation for/i.test(candidate)) continue;
+            return candidate;
+          }
+        }
+        break;
+      }
     }
+
+    // Fallback: try subject for messages/inquiries (NOT "Buchung für" which is the property name)
+    const subjectMatch = subject.match(/(?:message|nachricht)\s+(?:from|von)\s+(.+?)(?:,|\||$)/i);
+    if (subjectMatch) return subjectMatch[1].trim();
 
     return 'Airbnb Guest';
   }
 
   private extractBookingName(subject: string, body: string): string {
-    // Booking.com format varies
-    const match = subject.match(/(?:from|von) (.+?)(?:$|\sat\s)/i);
-    if (match) return match[1].trim();
+    // Best: extract from body "Nachricht von NAME:" or "Message from NAME:"
+    const bodyMatch = body.match(/(?:Nachricht von|Message from)\s+(.+?):/i);
+    if (bodyMatch) return bodyMatch[1].trim();
+
+    // Good: extract from body "Name des Gastes:\n  NAME"
+    const guestNameMatch = body.match(/(?:Name des Gastes|Guest name)[:\s]*\n\s*(.+)/i);
+    if (guestNameMatch) return guestNameMatch[1].trim();
+
+    // Fallback: extract from subject "von NAME erhalten" or "from NAME"
+    const subjectMatch = subject.match(/(?:von|from)\s+(.+?)(?:\s+erhalten|\s+received|$)/i);
+    if (subjectMatch) return subjectMatch[1].trim();
 
     return 'Booking.com Guest';
   }
 
   private extractExpediaName(subject: string, body: string): string {
-    const match = subject.match(/(?:from|von) (.+?)$/i);
-    if (match) return match[1].trim();
+    // Subject formats:
+    //   "Expedia guest message from ZILONG WANG"
+    //   "Nachricht von Expedia-Gast Inna Babitskaya"
+    //   "Antwort vom Hotels.com-Gast Frank Bernd Schreiber"
+    //   "Antwort vom Expedia-Gast Denis Snegovskikh"
+    //   "Hotels.com guest message from Heejung Lee"
+
+    // Match "message from NAME" or "Nachricht von ...Gast NAME" or "Antwort vom ...Gast NAME"
+    const subjectPatterns = [
+      /(?:message from|Nachricht von)\s+(?:Expedia-Gast\s+|Hotels\.com-Gast\s+|Expedia guest\s+|Hotels\.com guest\s+)?(.+?)$/i,
+      /(?:Antwort vom|Reply from)\s+(?:Expedia-Gast\s+|Hotels\.com-Gast\s+|Expedia guest\s+|Hotels\.com guest\s+)?(.+?)$/i,
+    ];
+
+    for (const pattern of subjectPatterns) {
+      const match = subject.match(pattern);
+      if (match) return match[1].trim();
+    }
+
+    // Body: "ZILONG WANG sent you a message" or "Inna Babitskaya hat Ihnen eine Nachricht gesendet"
+    const bodyMatch = body.match(/([\p{L}\s'.,\-]+?)\s+(?:hat Ihnen eine Nachricht gesendet|sent you a message)/mu);
+    if (bodyMatch) return bodyMatch[1].trim();
 
     return 'Expedia Guest';
   }
 
   private extractFewoName(subject: string, body: string): string {
-    const match = subject.match(/(?:von|from) (.+?)$/i);
-    if (match) return match[1].trim();
+    // Best: extract from body "Name Urlauber:\n        Nicky Bonnor" or "Guest name:"
+    const bodyNameMatch = body.match(/(?:Name Urlauber|Guest name)[:\s]*\n\s*(.+)/i);
+    if (bodyNameMatch) return bodyNameMatch[1].trim();
+
+    // Subject: "FeWo-direkt.de: NAME Antwort auf Ihre Nachricht"
+    const replyMatch = subject.match(/FeWo-direkt\.de:\s+(.+?)\s+Antwort auf/i);
+    if (replyMatch) return replyMatch[1].trim();
+
+    // Subject: "von NAME:" or "from NAME:"
+    const subjectMatch = subject.match(/(?:von|from)\s+(.+?)(?:\s*:|$)/i);
+    if (subjectMatch) return subjectMatch[1].trim();
 
     return 'FeWo-direkt Guest';
   }
@@ -184,76 +255,295 @@ export class EmailParserService {
   }
 
   private cleanAirbnbMessage(body: string): string {
-    // Remove Airbnb boilerplate
-    let clean = body;
+    // Airbnb email body contains the full conversation thread:
+    //    NAME
+    //    Buchende Person
+    //    newest message text...
+    //
+    //    NAME
+    //    Buchende Person
+    //    older message text...
+    //
+    // We need ONLY the first message (newest) after the first "Buchende Person" / "Guest",
+    // and stop before the NEXT "Buchende Person" / "Guest" block or boilerplate.
 
-    // Remove everything before the actual message (name, "Buchende Person", etc.)
-    // The message typically starts with "Hi" or a similar greeting
-    const messageStart = clean.search(/(?:Hi|Hello|Hallo|Dear|Liebe|Guten)/i);
-    if (messageStart !== -1) {
-      clean = clean.substring(messageStart);
-    } else {
-      // If no greeting found, try to remove first few lines (name, label)
-      const lines = clean.split('\n');
-      // Skip first 2-3 lines (usually name and "Buchende Person")
-      if (lines.length > 3) {
-        clean = lines.slice(2).join('\n');
+    const lines = body.split('\n');
+
+    // Find the first "Buchende Person" / "Guest" line
+    let startLine = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (/^\s*(?:Buchende Person|Guest)\s*$/i.test(lines[i])) {
+        startLine = i + 1; // message starts after this line
+        break;
       }
     }
 
-    // Remove "View conversation on Airbnb" and similar
-    clean = clean.replace(/View (?:full )?conversation on Airbnb.*/gi, '');
-    clean = clean.replace(/Unterhaltung auf Airbnb anzeigen.*/gi, '');
-    clean = clean.replace(/Antworten.*/gi, '');
-    clean = clean.replace(/Kommuniziere.+?Airbnb.*/gi, '');
-    clean = clean.replace(/immer über Airbnb.*/gi, '');
+    if (startLine === -1) {
+      // Fallback: try to find a greeting
+      const greetingStart = body.search(/(?:Hi|Hello|Hallo|Dear|Liebe|Guten)/i);
+      if (greetingStart !== -1) {
+        return body.substring(greetingStart).split('\n').slice(0, 10).join('\n').trim();
+      }
+      return '';
+    }
 
-    // Remove URLs
-    clean = clean.replace(/https?:\/\/\S+/g, '');
+    // Collect lines until we hit the NEXT "Buchende Person" / "Guest" block,
+    // a "You:" line (admin reply in thread), or boilerplate
+    const messageLines: string[] = [];
+    for (let i = startLine; i < lines.length; i++) {
+      const trimmed = lines[i].trim();
 
-    // Remove email footers
-    clean = clean.replace(/---+.*/gs, '');
-    clean = clean.replace(/Diese E-Mail.*/gi, '');
-    clean = clean.replace(/This email.*/gi, '');
+      // Stop if we hit another "Buchende Person" / "Guest" marker (next message in thread)
+      if (/^(?:Buchende Person|Guest)$/i.test(trimmed)) break;
 
-    // Remove excessive whitespace
+      // Stop if we hit a "You:" line (admin reply in the thread)
+      if (/^\s*You:/i.test(lines[i])) break;
+
+      // Stop at boilerplate
+      if (/^Antworten$/i.test(trimmed)) break;
+      if (/^Reply$/i.test(trimmed)) break;
+      if (/^View (?:full )?conversation/i.test(trimmed)) break;
+      if (/^Unterhaltung auf Airbnb anzeigen/i.test(trimmed)) break;
+      if (/^Du kannst auch direkt/i.test(trimmed)) break;
+      if (/^You can also reply directly/i.test(trimmed)) break;
+      if (/^Kommuniziere zu deinem Schutz/i.test(trimmed)) break;
+      if (/^immer über Airbnb/i.test(trimmed)) break;
+      if (/^---+$/.test(trimmed)) break;
+      if (/^_{3,}$/.test(trimmed)) break;
+      if (/^Diese E-Mail/i.test(trimmed)) break;
+      if (/^This email/i.test(trimmed)) break;
+      if (/^Airbnb, Inc\./i.test(trimmed)) break;
+      if (/^©\s*\d{4}\s*Airbnb/i.test(trimmed)) break;
+      if (/^https?:\/\//.test(trimmed)) break;
+      if (/^\[https?:\/\//.test(trimmed)) break;
+
+      // Check if this line is likely a NAME line right before the next "Buchende Person"
+      // (i.e., next non-blank line is "Buchende Person")
+      if (trimmed.length > 0 && trimmed.length < 60 && !/\s{2}/.test(trimmed)) {
+        // Look ahead: skip blank lines and check if "Buchende Person" follows
+        let nextNonBlank = '';
+        for (let k = i + 1; k < lines.length && k <= i + 3; k++) {
+          if (lines[k].trim().length > 0) {
+            nextNonBlank = lines[k].trim();
+            break;
+          }
+        }
+        if (/^(?:Buchende Person|Guest)$/i.test(nextNonBlank)) {
+          break; // This is a name line for the next message block
+        }
+      }
+
+      messageLines.push(lines[i]);
+    }
+
+    let clean = messageLines.join('\n');
     clean = clean.replace(/\n{3,}/g, '\n\n').trim();
 
     return clean;
+  }
+
+  private extractBookingDetails(body: string): Record<string, string> | null {
+    const details: Record<string, string> = {};
+    const fields: [RegExp, string][] = [
+      [/Buchungsnummer:\s*(\d+)/i, 'reservation'],
+      [/Check-in:\s*(.+)/i, 'checkIn'],
+      [/Check-out:\s*(.+)/i, 'checkOut'],
+      [/Unterkunftsname:\s*(.+)/i, 'property'],
+      [/Gesamtzahl der G(?:ä|ae?)ste:\s*(\d+)/i, 'guests'],
+      [/Gesamtzahl der Zimmer:\s*(\d+)/i, 'rooms'],
+    ];
+
+    for (const [regex, key] of fields) {
+      const match = body.match(regex);
+      if (match) details[key] = match[1].trim();
+    }
+
+    if (details.checkIn && details.checkOut) {
+      details.dates = `${details.checkIn} – ${details.checkOut}`;
+      delete details.checkIn;
+      delete details.checkOut;
+    }
+
+    return Object.keys(details).length > 0 ? details : null;
   }
 
   private cleanBookingMessage(body: string): string {
-    let clean = body;
-    
-    // Remove Booking.com links and boilerplate
-    clean = clean.replace(/View message.*/gi, '');
-    clean = clean.replace(/https?:\/\/\S+/g, '');
-    clean = clean.replace(/Click here.*/gi, '');
-    clean = clean.replace(/\n{3,}/g, '\n\n').trim();
+    const bookingDetails = this.extractBookingDetails(body);
 
-    return clean;
+    // Extract guest message between "Nachricht von NAME:" / "Message from NAME:" 
+    // and "Antworten" / "Reply" (the reply button)
+    const msgStart = body.match(/(?:Nachricht von|Message from)\s+.+?:\s*\n/i);
+    const msgEnd = body.match(/\n\s*Antworten\s*\n|\n\s*Reply\s*\n/i);
+
+    let guestMessage = '';
+    if (msgStart && msgEnd && msgStart.index !== undefined && msgEnd.index !== undefined) {
+      const startIdx = msgStart.index + msgStart[0].length;
+      const endIdx = msgEnd.index;
+      if (startIdx < endIdx) {
+        guestMessage = body.substring(startIdx, endIdx).trim();
+        guestMessage = guestMessage.replace(/https?:\/\/\S+/g, '');
+        guestMessage = guestMessage.replace(/^ +/gm, '');
+        guestMessage = guestMessage.replace(/\n{3,}/g, '\n\n').trim();
+      }
+    }
+
+    if (!guestMessage) {
+      let clean = body;
+      clean = clean.replace(/##-.*-##/g, '');
+      clean = clean.replace(/View message.*/gi, '');
+      clean = clean.replace(/https?:\/\/\S+/g, '');
+      clean = clean.replace(/Click here.*/gi, '');
+      clean = clean.replace(/Buchungsangaben[\s\S]*/gi, '');
+      clean = clean.replace(/© Copyright Booking\.com[\s\S]*/gi, '');
+      clean = clean.replace(/\n{3,}/g, '\n\n').trim();
+      guestMessage = clean;
+    }
+
+    if (bookingDetails) {
+      return `[BOOKING_INFO]${JSON.stringify(bookingDetails)}[/BOOKING_INFO]\n${guestMessage}`;
+    }
+
+    return guestMessage;
   }
 
   private cleanExpediaMessage(body: string): string {
-    let clean = body;
+    // Expedia wraps the guest message in quotes: "Sorry I just found it in my bag, thanks a lot"
+    // Strategy 1: Extract the quoted message directly (most reliable)
+    // Look for quoted text after the "sent you a message" / "hat Ihnen eine Nachricht gesendet" anchor
+    const anchorMatch = body.match(/(?:sent you a message|hat Ihnen eine Nachricht gesendet)/i);
+    
+    if (anchorMatch && anchorMatch.index !== undefined) {
+      const afterAnchor = body.substring(anchorMatch.index + anchorMatch[0].length);
+      
+      // Extract text between quotes (the actual guest message)
+      // Supports regular quotes "..." and typographic quotes \u201C...\u201D
+      const quotedMatch = afterAnchor.match(/["\u201C]([^"\u201D]+)["\u201D]/);
+      if (quotedMatch) {
+        return quotedMatch[1].trim();
+      }
+    }
 
-    // Remove Expedia boilerplate
-    clean = clean.replace(/View (?:your )?conversation.*/gi, '');
-    clean = clean.replace(/https?:\/\/\S+/g, '');
+    // Strategy 2: Try to find any quoted message in the body
+    const anyQuoted = body.match(/["\u201C]([^"\u201D]{10,})["\u201D]/);
+    if (anyQuoted) {
+      return anyQuoted[1].trim();
+    }
+
+    // Strategy 3: Fallback -- extract between anchor and boilerplate
+    let messageBody: string;
+    if (anchorMatch && anchorMatch.index !== undefined) {
+      messageBody = body.substring(anchorMatch.index + anchorMatch[0].length);
+    } else {
+      messageBody = body;
+    }
+
+    const endMarkers = [
+      /^Antworten\s*$/m,
+      /^Reply\s*$/m,
+      /^Vorherige Nachrichten/mi,
+      /^Previous messages/mi,
+      /^View (?:your )?conversation/mi,
+      /^Unterhaltung anzeigen/mi,
+      /^---+/m,
+      /^_{3,}/m,
+      /https?:\/\/\S+/,
+      /^©\s*\d{4}/mi,
+      /^Expedia Group/mi,
+    ];
+
+    let cutIndex = messageBody.length;
+    for (const marker of endMarkers) {
+      const match = messageBody.match(marker);
+      if (match && match.index !== undefined && match.index < cutIndex) {
+        cutIndex = match.index;
+      }
+    }
+
+    let clean = messageBody.substring(0, cutIndex);
     clean = clean.replace(/\n{3,}/g, '\n\n').trim();
 
     return clean;
   }
 
+  private extractFewoBookingDetails(body: string): Record<string, string> | null {
+    const details: Record<string, string> = {};
+    const fields: [RegExp, string][] = [
+      [/Objekt:\s*\n\s*#?(\S+)/i, 'property'],
+      [/Wohneinheit:\s*\n\s*(\S+)/i, 'unit'],
+      [/Reservierungsnr\.?:\s*\n\s*(\S+)/i, 'reservation'],
+      [/Zeitraum:\s*\n\s*(.+)/i, 'dates'],
+      [/G(?:ä|ae?)ste:\s*\n\s*(.+)/i, 'guests'],
+      [/Anfrage von:\s*\n\s*(.+)/i, 'source'],
+      [/Zahlungsmethode:\s*\n\s*(.+)/i, 'payment'],
+    ];
+
+    for (const [regex, key] of fields) {
+      const match = body.match(regex);
+      if (match) details[key] = match[1].trim();
+    }
+
+    return Object.keys(details).length > 0 ? details : null;
+  }
+
   private cleanFewoMessage(body: string): string {
-    let clean = body;
+    const bookingDetails = this.extractFewoBookingDetails(body);
+    let guestMessage = '';
 
-    // Remove FeWo-direkt boilerplate
-    clean = clean.replace(/Nachricht anzeigen.*/gi, '');
-    clean = clean.replace(/https?:\/\/\S+/g, '');
-    clean = clean.replace(/\n{3,}/g, '\n\n').trim();
+    // Format 1: Buchungsanfrage with "Nachricht des Urlaubers" / "Traveler's message"
+    const msgStart = body.match(/(?:Nachricht des Urlaubers|Traveler'?s? message)\s*\n/i);
+    const msgEnd = body.match(/(?:Zahlung des Reisenden|Traveler'?s? payment)/i);
 
-    return clean;
+    if (msgStart && msgEnd && msgStart.index !== undefined && msgEnd.index !== undefined) {
+      const startIdx = msgStart.index + msgStart[0].length;
+      const endIdx = msgEnd.index;
+      if (startIdx < endIdx) {
+        guestMessage = body.substring(startIdx, endIdx).trim();
+        guestMessage = guestMessage.replace(/https?:\/\/\S+/g, '').replace(/\n{3,}/g, '\n\n').trim();
+      }
+    }
+
+    // Format 2: Anfrage/inquiry with message between "Weitere Informationen" and "Anfrage beantworten"
+    if (!guestMessage) {
+      const inqStart = body.match(/Weitere Informationen\s*\n/i);
+      const inqEnd = body.match(/\n\s*Anfrage beantworten\s*\n/i);
+      if (inqStart && inqEnd && inqStart.index !== undefined && inqEnd.index !== undefined) {
+        const startIdx = inqStart.index + inqStart[0].length;
+        const endIdx = inqEnd.index;
+        if (startIdx < endIdx) {
+          guestMessage = body.substring(startIdx, endIdx).trim();
+          guestMessage = guestMessage.replace(/https?:\/\/\S+/g, '').replace(/\n{3,}/g, '\n\n').trim();
+        }
+      }
+    }
+
+    // Format 3: no guest message (booking request only)
+    if (!guestMessage && body.match(/(?:Neue Buchungsanfrage|Reservierungsanfrage)/i)) {
+      guestMessage = '';
+    }
+
+    // Format 4: plain reply -- message text before the "-------" Vrbo footer
+    if (!guestMessage && !bookingDetails) {
+      const footerIdx = body.indexOf('-------');
+      if (footerIdx > 0) {
+        guestMessage = body.substring(0, footerIdx).trim();
+        guestMessage = guestMessage.replace(/https?:\/\/\S+/g, '').replace(/\n{3,}/g, '\n\n').trim();
+      }
+    }
+
+    // Fallback
+    if (!guestMessage && !bookingDetails) {
+      let clean = body;
+      clean = clean.replace(/Nachricht anzeigen.*/gi, '');
+      clean = clean.replace(/https?:\/\/\S+/g, '');
+      clean = clean.replace(/\n{3,}/g, '\n\n').trim();
+      return clean;
+    }
+
+    if (bookingDetails) {
+      return `[BOOKING_INFO]${JSON.stringify(bookingDetails)}[/BOOKING_INFO]\n${guestMessage}`;
+    }
+
+    return guestMessage;
   }
 
   private cleanGenericMessage(body: string): string {

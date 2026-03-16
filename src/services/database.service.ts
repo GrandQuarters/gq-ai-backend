@@ -1,14 +1,15 @@
-import Database from 'better-sqlite3';
-import path from 'path';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const DB_PATH = path.join(__dirname, '../../gq-ai.db');
+// ==========================================
+// Type definitions
+// ==========================================
 
 export interface Contact {
   id: string;
   name: string;
   platform: string;
-  email: string;
-  phone_number?: string;
+  email: string | null;
+  phone_number: string | null;
   avatar: string;
   created_at: string;
   last_message_at: string;
@@ -18,12 +19,13 @@ export interface Conversation {
   id: string;
   contact_id: string;
   platform: string;
-  email_thread_id: string;
-  platform_conversation_hash: string | null; // Unique hash from platform email (e.g., Airbnb)
+  email_thread_id: string | null;
+  platform_conversation_hash: string | null;
+  property_name: string | null;
   last_message: string | null;
   unread_count: number;
-  is_pinned: number;
-  action_required: number;
+  is_pinned: boolean;
+  action_required: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -32,237 +34,362 @@ export interface Message {
   id: string;
   conversation_id: string;
   content: string;
+  original_content: string | null;
+  raw_email_data: string | null;
   sender_id: string;
   sender_name: string;
   sender_avatar: string;
-  timestamp: string;
-  is_own: number;
-  gmail_message_id: string;
+  sent_at: string;
+  is_own: boolean;
+  external_message_id: string | null;
+  read_at: string | null;
+  delivered_at: string | null;
 }
 
 export class DatabaseService {
-  private db: Database.Database;
+  private supabase: SupabaseClient;
 
   constructor() {
-    this.db = new Database(DB_PATH);
-    this.initialize();
-  }
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
 
-  private initialize(): void {
-    // Create tables
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS contacts (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        platform TEXT NOT NULL,
-        email TEXT NOT NULL,
-        phone_number TEXT,
-        avatar TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        last_message_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS conversations (
-        id TEXT PRIMARY KEY,
-        contact_id TEXT NOT NULL,
-        platform TEXT NOT NULL,
-        email_thread_id TEXT UNIQUE,
-        platform_conversation_hash TEXT,
-        last_message TEXT,
-        unread_count INTEGER DEFAULT 0,
-        is_pinned INTEGER DEFAULT 0,
-        action_required INTEGER DEFAULT 0,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY (contact_id) REFERENCES contacts(id)
-      );
-
-      CREATE TABLE IF NOT EXISTS messages (
-        id TEXT PRIMARY KEY,
-        conversation_id TEXT NOT NULL,
-        content TEXT NOT NULL,
-        sender_id TEXT NOT NULL,
-        sender_name TEXT NOT NULL,
-        sender_avatar TEXT NOT NULL,
-        timestamp TEXT NOT NULL,
-        is_own INTEGER DEFAULT 0,
-        gmail_message_id TEXT UNIQUE,
-        FOREIGN KEY (conversation_id) REFERENCES conversations(id)
-      );
-
-      CREATE TABLE IF NOT EXISTS processed_emails (
-        gmail_message_id TEXT PRIMARY KEY,
-        processed_at TEXT NOT NULL
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_conversations_thread ON conversations(email_thread_id);
-      CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
-      CREATE INDEX IF NOT EXISTS idx_messages_gmail ON messages(gmail_message_id);
-    `);
-
-    console.log('✅ Database initialized');
-  }
-
-  // Contacts
-  getContacts(): Contact[] {
-    return this.db.prepare('SELECT * FROM contacts ORDER BY last_message_at DESC').all() as Contact[];
-  }
-
-  getContactByNameAndPlatform(name: string, platform: string): Contact | undefined {
-    return this.db
-      .prepare('SELECT * FROM contacts WHERE name = ? AND platform = ?')
-      .get(name, platform) as Contact | undefined;
-  }
-
-  getContactByEmail(email: string): Contact | undefined {
-    return this.db
-      .prepare('SELECT * FROM contacts WHERE email = ?')
-      .get(email) as Contact | undefined;
-  }
-
-  getContactByPhoneNumber(phoneNumber: string): Contact | undefined {
-    return this.db
-      .prepare('SELECT * FROM contacts WHERE phone_number = ?')
-      .get(phoneNumber) as Contact | undefined;
-  }
-
-  createContact(contact: Omit<Contact, 'created_at' | 'last_message_at'>): Contact {
-    const now = new Date().toISOString();
-    const stmt = this.db.prepare(`
-      INSERT INTO contacts (id, name, platform, email, phone_number, avatar, created_at, last_message_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    stmt.run(
-      contact.id,
-      contact.name,
-      contact.platform,
-      contact.email,
-      contact.phone_number || null,
-      contact.avatar,
-      now,
-      now
-    );
-
-    return { ...contact, created_at: now, last_message_at: now };
-  }
-
-  updateContactLastMessage(contactId: string): void {
-    const stmt = this.db.prepare('UPDATE contacts SET last_message_at = ? WHERE id = ?');
-    stmt.run(new Date().toISOString(), contactId);
-  }
-
-  // Conversations
-  getConversations(): Conversation[] {
-    return this.db
-      .prepare('SELECT * FROM conversations ORDER BY updated_at DESC')
-      .all() as Conversation[];
-  }
-
-  getConversationByThreadId(threadId: string): Conversation | undefined {
-    return this.db
-      .prepare('SELECT * FROM conversations WHERE email_thread_id = ?')
-      .get(threadId) as Conversation | undefined;
-  }
-
-  getConversationByPlatformHash(hash: string): Conversation | undefined {
-    return this.db
-      .prepare('SELECT * FROM conversations WHERE platform_conversation_hash = ?')
-      .get(hash) as Conversation | undefined;
-  }
-
-  getConversationByPhoneNumber(phoneNumber: string): Conversation | undefined {
-    return this.db
-      .prepare('SELECT * FROM conversations WHERE platform_conversation_hash = ? AND platform = ?')
-      .get(phoneNumber, 'whatsapp') as Conversation | undefined;
-  }
-
-  createConversation(
-    conversation: Omit<Conversation, 'created_at' | 'updated_at'>
-  ): Conversation {
-    const now = new Date().toISOString();
-    const stmt = this.db.prepare(`
-      INSERT INTO conversations 
-      (id, contact_id, platform, email_thread_id, platform_conversation_hash, last_message, unread_count, is_pinned, action_required, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    stmt.run(
-      conversation.id,
-      conversation.contact_id,
-      conversation.platform,
-      conversation.email_thread_id,
-      conversation.platform_conversation_hash || null,
-      conversation.last_message,
-      conversation.unread_count,
-      conversation.is_pinned,
-      conversation.action_required,
-      now,
-      now
-    );
-
-    return { ...conversation, created_at: now, updated_at: now };
-  }
-
-  updateConversation(conversationId: string, updates: Partial<Conversation>): void {
-    const fields = [];
-    const values = [];
-
-    for (const [key, value] of Object.entries(updates)) {
-      fields.push(`${key} = ?`);
-      values.push(value);
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in .env');
     }
 
-    fields.push('updated_at = ?');
-    values.push(new Date().toISOString());
-    values.push(conversationId);
-
-    const stmt = this.db.prepare(`UPDATE conversations SET ${fields.join(', ')} WHERE id = ?`);
-    stmt.run(...values);
+    this.supabase = createClient(supabaseUrl, supabaseKey);
+    console.log('✅ Supabase client initialized');
   }
 
-  // Messages
-  getMessagesByConversation(conversationId: string): Message[] {
-    return this.db
-      .prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY timestamp ASC')
-      .all(conversationId) as Message[];
+  // ==========================================
+  // CONTACTS
+  // ==========================================
+
+  async getContacts(): Promise<Contact[]> {
+    const { data, error } = await this.supabase
+      .from('contacts')
+      .select('*')
+      .order('last_message_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
   }
 
-  createMessage(message: Message): void {
-    const stmt = this.db.prepare(`
-      INSERT OR IGNORE INTO messages 
-      (id, conversation_id, content, sender_id, sender_name, sender_avatar, timestamp, is_own, gmail_message_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+  async getContactByEmail(email: string): Promise<Contact | null> {
+    const { data, error } = await this.supabase
+      .from('contacts')
+      .select('*')
+      .eq('email', email)
+      .maybeSingle();
 
-    stmt.run(
-      message.id,
-      message.conversation_id,
-      message.content,
-      message.sender_id,
-      message.sender_name,
-      message.sender_avatar,
-      message.timestamp,
-      message.is_own,
-      message.gmail_message_id
-    );
+    if (error) throw error;
+    return data;
   }
 
-  isEmailProcessed(gmailMessageId: string): boolean {
-    const result = this.db
-      .prepare('SELECT 1 FROM processed_emails WHERE gmail_message_id = ?')
-      .get(gmailMessageId);
-    return !!result;
+  async getContactByPhoneNumber(phoneNumber: string): Promise<Contact | null> {
+    const { data, error } = await this.supabase
+      .from('contacts')
+      .select('*')
+      .eq('phone_number', phoneNumber)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data;
   }
 
-  markEmailAsProcessed(gmailMessageId: string): void {
-    const stmt = this.db.prepare(`
-      INSERT OR IGNORE INTO processed_emails (gmail_message_id, processed_at)
-      VALUES (?, ?)
-    `);
-    stmt.run(gmailMessageId, new Date().toISOString());
+  async getContactByNameAndPlatform(name: string, platform: string): Promise<Contact | null> {
+    const { data, error } = await this.supabase
+      .from('contacts')
+      .select('*')
+      .eq('name', name)
+      .eq('platform', platform)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data;
+  }
+
+  async createContact(contact: Omit<Contact, 'id' | 'created_at' | 'last_message_at'>): Promise<Contact> {
+    const { data, error } = await this.supabase
+      .from('contacts')
+      .insert({
+        name: contact.name,
+        platform: contact.platform,
+        email: contact.email || null,
+        phone_number: contact.phone_number || null,
+        avatar: contact.avatar,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  }
+
+  async updateContactLastMessage(contactId: string): Promise<void> {
+    const { error } = await this.supabase
+      .from('contacts')
+      .update({ last_message_at: new Date().toISOString() })
+      .eq('id', contactId);
+
+    if (error) throw error;
+  }
+
+  // ==========================================
+  // CONVERSATIONS
+  // ==========================================
+
+  async getConversations(): Promise<Conversation[]> {
+    const { data, error } = await this.supabase
+      .from('conversations')
+      .select('*')
+      .order('updated_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  }
+
+  async getConversationByThreadId(threadId: string): Promise<Conversation | null> {
+    const { data, error } = await this.supabase
+      .from('conversations')
+      .select('*')
+      .eq('email_thread_id', threadId)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data;
+  }
+
+  async getConversationByPlatformHash(hash: string): Promise<Conversation | null> {
+    const { data, error } = await this.supabase
+      .from('conversations')
+      .select('*')
+      .eq('platform_conversation_hash', hash)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data;
+  }
+
+  async getConversationByContactAndProperty(contactId: string, propertyName: string): Promise<Conversation | null> {
+    const { data, error } = await this.supabase
+      .from('conversations')
+      .select('*')
+      .eq('contact_id', contactId)
+      .eq('property_name', propertyName)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data;
+  }
+
+  async getConversationByPhoneNumber(phoneNumber: string): Promise<Conversation | null> {
+    const { data, error } = await this.supabase
+      .from('conversations')
+      .select('*')
+      .eq('platform_conversation_hash', phoneNumber)
+      .eq('platform', 'whatsapp')
+      .maybeSingle();
+
+    if (error) throw error;
+    return data;
+  }
+
+  async createConversation(conversation: Omit<Conversation, 'id' | 'created_at' | 'updated_at'>): Promise<Conversation> {
+    const { data, error } = await this.supabase
+      .from('conversations')
+      .insert({
+        contact_id: conversation.contact_id,
+        platform: conversation.platform,
+        email_thread_id: conversation.email_thread_id || null,
+        platform_conversation_hash: conversation.platform_conversation_hash || null,
+        property_name: conversation.property_name || null,
+        last_message: conversation.last_message,
+        unread_count: conversation.unread_count,
+        is_pinned: conversation.is_pinned,
+        action_required: conversation.action_required,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  }
+
+  async updateConversation(conversationId: string, updates: Partial<Conversation>): Promise<void> {
+    const { id, created_at, ...safeUpdates } = updates as any;
+
+    const { error } = await this.supabase
+      .from('conversations')
+      .update(safeUpdates)
+      .eq('id', conversationId);
+
+    if (error) throw error;
+  }
+
+  // ==========================================
+  // MESSAGES
+  // ==========================================
+
+  async getMessagesByConversation(conversationId: string): Promise<Message[]> {
+    const { data, error } = await this.supabase
+      .from('messages')
+      .select('*')
+      .eq('conversation_id', conversationId)
+      .order('sent_at', { ascending: true });
+
+    if (error) throw error;
+    return (data || []).map((row) => ({
+      ...row,
+      original_content: row.original_content || null,
+      raw_email_data: row.raw_email_data || null,
+      read_at: row.read_at || null,
+      delivered_at: row.delivered_at || null,
+    }));
+  }
+
+  async createMessage(message: Omit<Message, 'id' | 'read_at' | 'delivered_at'>): Promise<Message> {
+    const { data, error } = await this.supabase
+      .from('messages')
+      .upsert(
+        {
+          conversation_id: message.conversation_id,
+          content: message.content,
+          original_content: message.original_content || null,
+          raw_email_data: message.raw_email_data || null,
+          sender_id: message.sender_id,
+          sender_name: message.sender_name,
+          sender_avatar: message.sender_avatar,
+          sent_at: message.sent_at,
+          is_own: message.is_own,
+          external_message_id: message.external_message_id || null,
+        },
+        { onConflict: 'external_message_id', ignoreDuplicates: true }
+      )
+      .select()
+      .single();
+
+    if (error) throw error;
+    return {
+      ...data,
+      original_content: data.original_content || null,
+      raw_email_data: data.raw_email_data || null,
+      read_at: data.read_at || null,
+      delivered_at: data.delivered_at || null,
+    };
+  }
+
+  async getMessageById(messageId: string): Promise<Message | null> {
+    const { data, error } = await this.supabase
+      .from('messages')
+      .select('*')
+      .eq('id', messageId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return null;
+    return {
+      ...data,
+      original_content: data.original_content || null,
+      raw_email_data: data.raw_email_data || null,
+      read_at: data.read_at || null,
+      delivered_at: data.delivered_at || null,
+    };
+  }
+
+  // ==========================================
+  // PROCESSED MESSAGES
+  // ==========================================
+
+  async isMessageProcessed(externalMessageId: string): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('processed_messages')
+      .select('external_message_id')
+      .eq('external_message_id', externalMessageId)
+      .maybeSingle();
+
+    if (error) throw error;
+    return !!data;
+  }
+
+  async markMessageAsProcessed(externalMessageId: string, platform: 'gmail' | 'whatsapp'): Promise<void> {
+    const { error } = await this.supabase
+      .from('processed_messages')
+      .upsert(
+        {
+          external_message_id: externalMessageId,
+          platform,
+        },
+        { onConflict: 'external_message_id', ignoreDuplicates: true }
+      );
+
+    if (error) throw error;
+  }
+
+  // ==========================================
+  // AI RESPONSES
+  // ==========================================
+
+  async createAiResponse(params: {
+    conversation_id: string;
+    content: string;
+    source_message_ids: string[];
+    unanswered_message_count: number;
+    model: string;
+    tokens_used?: number;
+    generation_time_ms?: number;
+  }): Promise<{ id: string }> {
+    const { data, error } = await this.supabase
+      .from('ai_responses')
+      .insert({
+        conversation_id: params.conversation_id,
+        content: params.content,
+        status: 'pending',
+        source_message_ids: params.source_message_ids,
+        unanswered_message_count: params.unanswered_message_count,
+        model: params.model,
+        tokens_used: params.tokens_used || null,
+        generation_time_ms: params.generation_time_ms || null,
+      })
+      .select('id')
+      .single();
+
+    if (error) throw error;
+    return data;
+  }
+
+  async supersedePendingAiResponses(conversationId: string): Promise<void> {
+    const { error } = await this.supabase
+      .from('ai_responses')
+      .update({ status: 'superseded', superseded_at: new Date().toISOString() })
+      .eq('conversation_id', conversationId)
+      .eq('status', 'pending');
+
+    if (error) throw error;
+  }
+
+  async markAiResponseSent(aiResponseId: string): Promise<void> {
+    const { error } = await this.supabase
+      .from('ai_responses')
+      .update({ status: 'sent', sent_at: new Date().toISOString() })
+      .eq('id', aiResponseId);
+
+    if (error) throw error;
+  }
+
+  async getPendingAiResponse(conversationId: string): Promise<{ id: string; content: string } | null> {
+    const { data, error } = await this.supabase
+      .from('ai_responses')
+      .select('id, content')
+      .eq('conversation_id', conversationId)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data;
   }
 }
 
 export const databaseService = new DatabaseService();
-

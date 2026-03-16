@@ -52,16 +52,34 @@ export class GmailService {
       return header?.value || '';
     };
 
-    // Decode email body
+    // Decode email body (prefer text/plain, fall back to text/html stripped of tags)
     let body = '';
     if (message.payload?.body?.data) {
       body = Buffer.from(message.payload.body.data, 'base64').toString('utf-8');
     } else if (message.payload?.parts) {
-      // Multipart email
-      for (const part of message.payload.parts) {
-        if (part.mimeType === 'text/plain' && part.body?.data) {
-          body += Buffer.from(part.body.data, 'base64').toString('utf-8');
+      let plainText = '';
+      let htmlText = '';
+
+      // Recursively collect parts (handles nested multipart structures)
+      const collectParts = (parts: gmail_v1.Schema$MessagePart[]) => {
+        for (const part of parts) {
+          if (part.mimeType === 'text/plain' && part.body?.data) {
+            plainText += Buffer.from(part.body.data, 'base64').toString('utf-8');
+          } else if (part.mimeType === 'text/html' && part.body?.data) {
+            htmlText += Buffer.from(part.body.data, 'base64').toString('utf-8');
+          } else if (part.parts) {
+            collectParts(part.parts);
+          }
         }
+      };
+
+      collectParts(message.payload.parts);
+
+      if (plainText) {
+        body = plainText;
+      } else if (htmlText) {
+        // Strip HTML tags to get readable text
+        body = this.htmlToText(htmlText);
       }
     }
 
@@ -71,7 +89,7 @@ export class GmailService {
     if (from.includes('airbnb') || from.includes('express@airbnb.com')) platform = 'airbnb';
     else if (from.includes('@m.expediapartnercentral.com') || from.includes('expedia')) platform = 'expedia';
     else if (from.includes('@guest.booking.com') || from.includes('booking')) platform = 'booking';
-    else if (from.includes('@messages.homeaway.com') || from.includes('fewo') || from.includes('homeaway')) platform = 'fewo';
+    else if (from.includes('@messages.homeaway.com') || from.includes('fewo') || from.includes('homeaway') || from.includes('vrbo')) platform = 'fewo';
 
     return {
       id: message.id!,
@@ -150,9 +168,43 @@ export class GmailService {
     });
   }
 
+  private htmlToText(html: string): string {
+    let text = html;
+    // Replace <br>, <br/>, <br /> with newlines
+    text = text.replace(/<br\s*\/?>/gi, '\n');
+    // Replace </p>, </div>, </tr>, </li> with newlines for block-level separation
+    text = text.replace(/<\/(?:p|div|tr|li|h[1-6])>/gi, '\n');
+    // Replace </td> with tab (table cells)
+    text = text.replace(/<\/td>/gi, '\t');
+    // Remove <style> and <script> blocks entirely
+    text = text.replace(/<style[\s\S]*?<\/style>/gi, '');
+    text = text.replace(/<script[\s\S]*?<\/script>/gi, '');
+    // Remove all remaining HTML tags
+    text = text.replace(/<[^>]+>/g, '');
+    // Decode common HTML entities
+    text = text.replace(/&amp;/g, '&');
+    text = text.replace(/&lt;/g, '<');
+    text = text.replace(/&gt;/g, '>');
+    text = text.replace(/&quot;/g, '"');
+    text = text.replace(/&#39;/g, "'");
+    text = text.replace(/&nbsp;/g, ' ');
+    text = text.replace(/&auml;/g, 'ä');
+    text = text.replace(/&ouml;/g, 'ö');
+    text = text.replace(/&uuml;/g, 'ü');
+    text = text.replace(/&Auml;/g, 'Ä');
+    text = text.replace(/&Ouml;/g, 'Ö');
+    text = text.replace(/&Uuml;/g, 'Ü');
+    text = text.replace(/&szlig;/g, 'ß');
+    text = text.replace(/&#(\d+);/g, (_, num) => String.fromCharCode(parseInt(num)));
+    // Collapse excessive whitespace
+    text = text.replace(/[ \t]+/g, ' ');
+    text = text.replace(/\n[ \t]+/g, '\n');
+    text = text.replace(/\n{3,}/g, '\n\n');
+    return text.trim();
+  }
+
   async getNewMessages(): Promise<GmailMessage[]> {
-    // Fetch from booking platforms + test email
-    const platformQuery = 'from:(express@airbnb.com OR @m.expediapartnercentral.com OR @guest.booking.com OR sender@messages.homeaway.com OR @salescrew.at) is:unread';
+    const platformQuery = 'is:unread from:(express@airbnb.com OR @m.expediapartnercentral.com OR @guest.booking.com OR sender@messages.homeaway.com)';
     const messageList = await this.listMessages(platformQuery, 20);
 
     const messages: GmailMessage[] = [];
