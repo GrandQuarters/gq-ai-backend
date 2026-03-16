@@ -646,7 +646,6 @@ export class OpenAIService {
         messages: [
           { role: 'system', content: systemPrompt },
         ],
-        temperature: 0.7,
         max_completion_tokens: 1000,
       });
 
@@ -696,7 +695,6 @@ export class OpenAIService {
           },
           { role: 'user', content: text },
         ],
-        temperature: 0.3,
         max_completion_tokens: 1000,
       });
 
