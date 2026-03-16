@@ -24,11 +24,9 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 
 // Middleware
-const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000')
-  .split(',')
-  .map((u) => u.trim().replace(/\/+$/, ''));
-console.log('🌐 CORS allowed origins:', allowedOrigins);
-app.use(cors({ origin: allowedOrigins, credentials: true }));
+const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
+console.log('🌐 CORS: Allowing all origins (FRONTEND_URL=' + frontendUrl + ')');
+app.use(cors());
 app.use(express.json());
 
 // Health check
