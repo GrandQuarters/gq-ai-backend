@@ -11,11 +11,23 @@ import { whatsappMonitorService } from './services/whatsapp-monitor.service';
 
 dotenv.config();
 
+process.on('uncaughtException', (error) => {
+  console.error('💥 Uncaught Exception:', error.message);
+  console.error(error.stack);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('💥 Unhandled Rejection:', reason);
+});
+
 const app = express();
 const PORT = process.env.PORT || 4000;
 
 // Middleware
-app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:3000' }));
+const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000')
+  .split(',')
+  .map((u) => u.trim());
+app.use(cors({ origin: allowedOrigins.length === 1 ? allowedOrigins[0] : allowedOrigins }));
 app.use(express.json());
 
 // Health check
@@ -264,6 +276,21 @@ wss.on('connection', (ws) => {
   whatsappMonitorService.addWebSocketClient(ws);
 });
 
+// Startup diagnostics
+console.log('┌──────────────────────────────────────');
+console.log('│ 🔧 ENVIRONMENT CONFIG');
+console.log('├──────────────────────────────────────');
+console.log('│ PORT:              ', process.env.PORT || '4000 (default)');
+console.log('│ NODE_ENV:          ', process.env.NODE_ENV || 'not set');
+console.log('│ FRONTEND_URL:      ', process.env.FRONTEND_URL || 'http://localhost:3000 (default)');
+console.log('│ SUPABASE_URL:      ', process.env.SUPABASE_URL ? '✅ set' : '❌ MISSING');
+console.log('│ SUPABASE_KEY:      ', process.env.SUPABASE_SERVICE_KEY ? '✅ set' : '❌ MISSING');
+console.log('│ OPENAI_API_KEY:    ', process.env.OPENAI_API_KEY ? '✅ set' : '❌ MISSING');
+console.log('│ GMAIL_USER:        ', process.env.GMAIL_USER || '❌ MISSING');
+console.log('│ GOOGLE_CLIENT_ID:  ', process.env.GOOGLE_CLIENT_ID ? '✅ set' : '⚠️  not set (using credentials.json)');
+console.log('│ GOOGLE_REFRESH:    ', process.env.GOOGLE_REFRESH_TOKEN ? '✅ set' : '⚠️  not set (using token.json)');
+console.log('└──────────────────────────────────────');
+
 // Start Gmail monitoring
 async function startMonitoring() {
   try {
@@ -272,10 +299,11 @@ async function startMonitoring() {
     
     await messageMonitorService.start();
     console.log('✅ Message monitoring started');
-  } catch (error) {
-    console.error('❌ Failed to start monitoring:', error);
-    console.log('\n⚠️  Please run authentication first:');
-    console.log('   npm run auth\n');
+  } catch (error: any) {
+    console.error('❌ Failed to start Gmail monitoring:', error.message);
+    console.log('⚠️  Server is still running — API endpoints work, but email polling is disabled.');
+    console.log('   To fix: set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN env vars');
+    console.log('   Or run `npm run auth` locally to generate token.json\n');
   }
 }
 

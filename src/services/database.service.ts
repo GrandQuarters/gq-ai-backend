@@ -47,18 +47,23 @@ export interface Message {
 }
 
 export class DatabaseService {
-  private supabase: SupabaseClient;
+  private supabase: SupabaseClient | null = null;
 
-  constructor() {
+  private getClient(): SupabaseClient {
+    if (this.supabase) return this.supabase;
+
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
-      throw new Error('SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in .env');
+      console.error('❌ SUPABASE_URL and SUPABASE_SERVICE_KEY are not set!');
+      console.error('   Set these environment variables on Railway or in your .env file.');
+      throw new Error('Supabase not configured');
     }
 
     this.supabase = createClient(supabaseUrl, supabaseKey);
     console.log('✅ Supabase client initialized');
+    return this.supabase;
   }
 
   // ==========================================
@@ -66,7 +71,7 @@ export class DatabaseService {
   // ==========================================
 
   async getContacts(): Promise<Contact[]> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.getClient()
       .from('contacts')
       .select('*')
       .order('last_message_at', { ascending: false });
@@ -76,7 +81,7 @@ export class DatabaseService {
   }
 
   async getContactByEmail(email: string): Promise<Contact | null> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.getClient()
       .from('contacts')
       .select('*')
       .eq('email', email)
@@ -87,7 +92,7 @@ export class DatabaseService {
   }
 
   async getContactByPhoneNumber(phoneNumber: string): Promise<Contact | null> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.getClient()
       .from('contacts')
       .select('*')
       .eq('phone_number', phoneNumber)
@@ -98,7 +103,7 @@ export class DatabaseService {
   }
 
   async getContactByNameAndPlatform(name: string, platform: string): Promise<Contact | null> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.getClient()
       .from('contacts')
       .select('*')
       .eq('name', name)
@@ -110,7 +115,7 @@ export class DatabaseService {
   }
 
   async createContact(contact: Omit<Contact, 'id' | 'created_at' | 'last_message_at'>): Promise<Contact> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.getClient()
       .from('contacts')
       .insert({
         name: contact.name,
@@ -127,7 +132,7 @@ export class DatabaseService {
   }
 
   async updateContactLastMessage(contactId: string): Promise<void> {
-    const { error } = await this.supabase
+    const { error } = await this.getClient()
       .from('contacts')
       .update({ last_message_at: new Date().toISOString() })
       .eq('id', contactId);
@@ -140,7 +145,7 @@ export class DatabaseService {
   // ==========================================
 
   async getConversations(): Promise<Conversation[]> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.getClient()
       .from('conversations')
       .select('*')
       .order('updated_at', { ascending: false });
@@ -150,7 +155,7 @@ export class DatabaseService {
   }
 
   async getConversationByThreadId(threadId: string): Promise<Conversation | null> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.getClient()
       .from('conversations')
       .select('*')
       .eq('email_thread_id', threadId)
@@ -161,7 +166,7 @@ export class DatabaseService {
   }
 
   async getConversationByPlatformHash(hash: string): Promise<Conversation | null> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.getClient()
       .from('conversations')
       .select('*')
       .eq('platform_conversation_hash', hash)
@@ -172,7 +177,7 @@ export class DatabaseService {
   }
 
   async getConversationByContactAndProperty(contactId: string, propertyName: string): Promise<Conversation | null> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.getClient()
       .from('conversations')
       .select('*')
       .eq('contact_id', contactId)
@@ -184,7 +189,7 @@ export class DatabaseService {
   }
 
   async getConversationByPhoneNumber(phoneNumber: string): Promise<Conversation | null> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.getClient()
       .from('conversations')
       .select('*')
       .eq('platform_conversation_hash', phoneNumber)
@@ -196,7 +201,7 @@ export class DatabaseService {
   }
 
   async createConversation(conversation: Omit<Conversation, 'id' | 'created_at' | 'updated_at'>): Promise<Conversation> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.getClient()
       .from('conversations')
       .insert({
         contact_id: conversation.contact_id,
@@ -219,7 +224,7 @@ export class DatabaseService {
   async updateConversation(conversationId: string, updates: Partial<Conversation>): Promise<void> {
     const { id, created_at, ...safeUpdates } = updates as any;
 
-    const { error } = await this.supabase
+    const { error } = await this.getClient()
       .from('conversations')
       .update(safeUpdates)
       .eq('id', conversationId);
@@ -232,7 +237,7 @@ export class DatabaseService {
   // ==========================================
 
   async getMessagesByConversation(conversationId: string): Promise<Message[]> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.getClient()
       .from('messages')
       .select('*')
       .eq('conversation_id', conversationId)
@@ -249,7 +254,7 @@ export class DatabaseService {
   }
 
   async createMessage(message: Omit<Message, 'id' | 'read_at' | 'delivered_at'>): Promise<Message> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.getClient()
       .from('messages')
       .upsert(
         {
@@ -280,7 +285,7 @@ export class DatabaseService {
   }
 
   async getMessageById(messageId: string): Promise<Message | null> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.getClient()
       .from('messages')
       .select('*')
       .eq('id', messageId)
@@ -302,7 +307,7 @@ export class DatabaseService {
   // ==========================================
 
   async isMessageProcessed(externalMessageId: string): Promise<boolean> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.getClient()
       .from('processed_messages')
       .select('external_message_id')
       .eq('external_message_id', externalMessageId)
@@ -313,7 +318,7 @@ export class DatabaseService {
   }
 
   async markMessageAsProcessed(externalMessageId: string, platform: 'gmail' | 'whatsapp'): Promise<void> {
-    const { error } = await this.supabase
+    const { error } = await this.getClient()
       .from('processed_messages')
       .upsert(
         {
@@ -339,7 +344,7 @@ export class DatabaseService {
     tokens_used?: number;
     generation_time_ms?: number;
   }): Promise<{ id: string }> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.getClient()
       .from('ai_responses')
       .insert({
         conversation_id: params.conversation_id,
@@ -359,7 +364,7 @@ export class DatabaseService {
   }
 
   async supersedePendingAiResponses(conversationId: string): Promise<void> {
-    const { error } = await this.supabase
+    const { error } = await this.getClient()
       .from('ai_responses')
       .update({ status: 'superseded', superseded_at: new Date().toISOString() })
       .eq('conversation_id', conversationId)
@@ -369,7 +374,7 @@ export class DatabaseService {
   }
 
   async markAiResponseSent(aiResponseId: string): Promise<void> {
-    const { error } = await this.supabase
+    const { error } = await this.getClient()
       .from('ai_responses')
       .update({ status: 'sent', sent_at: new Date().toISOString() })
       .eq('id', aiResponseId);
@@ -378,7 +383,7 @@ export class DatabaseService {
   }
 
   async getPendingAiResponse(conversationId: string): Promise<{ id: string; content: string } | null> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.getClient()
       .from('ai_responses')
       .select('id, content')
       .eq('conversation_id', conversationId)
