@@ -10,11 +10,9 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ==========================================
 -- Drop existing objects (safe re-run)
 -- ==========================================
-DROP TRIGGER IF EXISTS update_conversations_updated_at ON conversations;
-DROP TRIGGER IF EXISTS update_ai_responses_updated_at ON ai_responses;
-DROP FUNCTION IF EXISTS update_updated_at_column();
-DROP FUNCTION IF EXISTS get_unanswered_messages(UUID);
-DROP FUNCTION IF EXISTS get_or_supersede_pending_ai_response(UUID);
+DROP FUNCTION IF EXISTS update_updated_at_column() CASCADE;
+DROP FUNCTION IF EXISTS get_unanswered_messages(UUID) CASCADE;
+DROP FUNCTION IF EXISTS get_or_supersede_pending_ai_response(UUID) CASCADE;
 
 DROP TABLE IF EXISTS ai_responses CASCADE;
 DROP TABLE IF EXISTS processed_messages CASCADE;
