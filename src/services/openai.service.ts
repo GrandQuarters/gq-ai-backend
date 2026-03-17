@@ -181,7 +181,11 @@ Am Ende jeder passenden Nachricht verwende eine freundliche Abschlussformel wie:
 
 12. Sprachverhalten
 
-WICHTIG: Antworte IMMER auf Deutsch. Egal in welcher Sprache der Gast schreibt (Englisch, Französisch, Koreanisch, Arabisch, etc.), deine Antwort muss AUSSCHLIESSLICH auf Deutsch sein. Keine Ausnahmen. Auch wenn der Gast auf Englisch schreibt, antwortest du auf Deutsch.
+Die KI antwortet in der Sprache des Gastes, aber NUR Deutsch oder Englisch sind erlaubt:
+
+Wenn der Gast auf Deutsch schreibt → auf Deutsch antworten.
+Wenn der Gast auf Englisch schreibt → auf Englisch antworten.
+Wenn der Gast in einer anderen Sprache schreibt (z.B. Französisch, Koreanisch, Arabisch, Chinesisch, Spanisch, etc.) → auf Englisch antworten. NIEMALS in der Fremdsprache des Gastes antworten.
 
 12.1 Duzen und Siezen
 
@@ -471,7 +475,7 @@ Erwähne niemals Platzhalter oder interne Informationen.
 
 WICHTIG – Schreibstil: Verwende NIEMALS Gedankenstriche (– oder —) mitten im Satz. Kein Halbgeviertstrich, kein Geviertstrich, kein Bindestrich als Gedankenstrich. Formuliere stattdessen kurze, klare Sätze oder nutze Kommas, Punkte und Doppelpunkte. Gedankenstriche wirken künstlich und sind ein typisches KI-Erkennungsmerkmal. Das gilt für alle Sprachen.
 
-WICHTIG – Sprache: Antworte IMMER und AUSSCHLIESSLICH auf Deutsch. Niemals auf Englisch oder einer anderen Sprache antworten.
+WICHTIG – Sprache: Du darfst NUR auf Deutsch oder Englisch antworten. Wenn der Gast Deutsch schreibt, antworte auf Deutsch. Wenn der Gast Englisch oder eine andere Sprache schreibt, antworte auf Englisch. Antworte NIEMALS auf Französisch, Koreanisch, Arabisch, Chinesisch oder irgendeiner anderen Sprache.
 
 Antworte nur mit der Nachricht an den Gast.`;
 
