@@ -649,14 +649,20 @@ export class OpenAIService {
         messages: [
           { role: 'system', content: systemPrompt },
         ],
-        max_completion_tokens: 1000,
+        max_completion_tokens: 50000,
       });
 
       const elapsed = Date.now() - startTime;
       const usage = response.usage;
-      console.log(`✅ OpenAI generateResponse: Success in ${elapsed}ms | Tokens: prompt=${usage?.prompt_tokens || '?'} completion=${usage?.completion_tokens || '?'} total=${usage?.total_tokens || '?'}`);
+      const reasoningTokens = (usage as any)?.completion_tokens_details?.reasoning_tokens || 0;
+      console.log(`✅ OpenAI generateResponse: Success in ${elapsed}ms | Tokens: prompt=${usage?.prompt_tokens || '?'} reasoning=${reasoningTokens} completion=${usage?.completion_tokens || '?'} total=${usage?.total_tokens || '?'}`);
+      console.log(`   finish_reason: ${response.choices[0].finish_reason}`);
 
-      const content = response.choices[0].message.content || 'Danke für Ihre Nachricht!';
+      const content = response.choices[0].message.content?.trim();
+      if (!content) {
+        console.warn('⚠️ AI returned empty content (reasoning tokens likely exhausted the budget)');
+        return '⚠️ AI-Antwort konnte nicht generiert werden. Bitte erneut versuchen.';
+      }
       console.log('🤖 AI Response preview:', content.substring(0, 120) + (content.length > 120 ? '...' : ''));
       return content;
     } catch (error: any) {
@@ -698,12 +704,13 @@ export class OpenAIService {
           },
           { role: 'user', content: text },
         ],
-        max_completion_tokens: 1000,
+        max_completion_tokens: 50000,
       });
 
       const elapsed = Date.now() - startTime;
       const usage = response.usage;
-      console.log(`✅ OpenAI translateToGerman: Success in ${elapsed}ms | Tokens: prompt=${usage?.prompt_tokens || '?'} completion=${usage?.completion_tokens || '?'}`);
+      const reasoningTokens = (usage as any)?.completion_tokens_details?.reasoning_tokens || 0;
+      console.log(`✅ OpenAI translateToGerman: Success in ${elapsed}ms | Tokens: prompt=${usage?.prompt_tokens || '?'} reasoning=${reasoningTokens} completion=${usage?.completion_tokens || '?'}`);
 
       const result = response.choices[0].message.content?.trim() || text;
       console.log('🌐 Translation result:', result.substring(0, 80) + (result.length > 80 ? '...' : ''));
