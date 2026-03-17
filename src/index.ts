@@ -216,7 +216,7 @@ app.post('/api/messages/send', async (req, res) => {
   }
 });
 
-// Retry translation for a message
+// Translate or re-translate a message
 app.post('/api/messages/:id/retry-translation', async (req, res) => {
   try {
     const message = await databaseService.getMessageById(req.params.id);
@@ -224,29 +224,26 @@ app.post('/api/messages/:id/retry-translation', async (req, res) => {
       return res.status(404).json({ error: 'Message not found' });
     }
 
-    if (message.original_content) {
-      return res.json({ content: message.content, originalContent: message.original_content, alreadyTranslated: true });
+    const sourceText = message.original_content || message.content;
+
+    if (!openAIService.needsTranslation(sourceText)) {
+      return res.json({ content: message.content, originalContent: message.original_content || null, alreadyTranslated: true });
     }
 
-    if (!openAIService.needsTranslation(message.content)) {
-      return res.json({ content: message.content, originalContent: null, alreadyTranslated: true });
-    }
-
-    console.log(`🌐 Retrying translation for message ${req.params.id}...`);
-    const translated = await openAIService.translateToGerman(message.content);
+    console.log(`🌐 Translating message ${req.params.id}...`);
+    const translated = await openAIService.translateToGerman(sourceText);
 
     if (!translated || translated.startsWith('⚠️')) {
       return res.status(502).json({ error: translated || 'Translation failed' });
     }
 
-    const originalText = message.content;
     await databaseService.updateMessage(req.params.id, {
       content: translated,
-      original_content: originalText,
+      original_content: sourceText,
     });
 
     console.log(`✅ Translation saved for message ${req.params.id}`);
-    res.json({ content: translated, originalContent: originalText });
+    res.json({ content: translated, originalContent: sourceText });
   } catch (error: any) {
     console.error('❌ Error retrying translation:', error);
     res.status(500).json({ error: error.message || 'Translation failed' });
