@@ -284,6 +284,24 @@ export class DatabaseService {
     };
   }
 
+  async updateMessage(messageId: string, fields: { content?: string; original_content?: string | null }): Promise<Message> {
+    const { data, error } = await this.getClient()
+      .from('messages')
+      .update(fields)
+      .eq('id', messageId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return {
+      ...data,
+      original_content: data.original_content || null,
+      raw_email_data: data.raw_email_data || null,
+      read_at: data.read_at || null,
+      delivered_at: data.delivered_at || null,
+    };
+  }
+
   async getMessageById(messageId: string): Promise<Message | null> {
     const { data, error } = await this.getClient()
       .from('messages')

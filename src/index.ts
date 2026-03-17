@@ -216,6 +216,43 @@ app.post('/api/messages/send', async (req, res) => {
   }
 });
 
+// Retry translation for a message
+app.post('/api/messages/:id/retry-translation', async (req, res) => {
+  try {
+    const message = await databaseService.getMessageById(req.params.id);
+    if (!message) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    if (message.original_content) {
+      return res.json({ content: message.content, originalContent: message.original_content, alreadyTranslated: true });
+    }
+
+    if (!openAIService.needsTranslation(message.content)) {
+      return res.json({ content: message.content, originalContent: null, alreadyTranslated: true });
+    }
+
+    console.log(`🌐 Retrying translation for message ${req.params.id}...`);
+    const translated = await openAIService.translateToGerman(message.content);
+
+    if (!translated || translated.startsWith('⚠️')) {
+      return res.status(502).json({ error: translated || 'Translation failed' });
+    }
+
+    const originalText = message.content;
+    await databaseService.updateMessage(req.params.id, {
+      content: translated,
+      original_content: originalText,
+    });
+
+    console.log(`✅ Translation saved for message ${req.params.id}`);
+    res.json({ content: translated, originalContent: originalText });
+  } catch (error: any) {
+    console.error('❌ Error retrying translation:', error);
+    res.status(500).json({ error: error.message || 'Translation failed' });
+  }
+});
+
 // Generate AI response for a conversation (re-process as if message just arrived)
 app.post('/api/conversations/:id/generate-ai', async (req, res) => {
   try {
