@@ -71,6 +71,8 @@ export class EmailParserService {
         cleanMessage = this.cleanGenericMessage(body);
     }
 
+    cleanMessage = cleanMessage.replace(/^(?:Re|AW|Fwd|WG):\s*.+\n*/gim, '').trim();
+
     return {
       customerName,
       message: cleanMessage.trim(),
@@ -398,6 +400,8 @@ export class EmailParserService {
       clean = clean.replace(/\n{3,}/g, '\n\n').trim();
       guestMessage = clean;
     }
+
+    guestMessage = guestMessage.replace(/^(?:Wir haben diese Nachricht von|We received this message from)\s+.+(?:erhalten|received)\.?\s*\n*/gim, '').trim();
 
     if (bookingDetails) {
       return `[BOOKING_INFO]${JSON.stringify(bookingDetails)}[/BOOKING_INFO]\n${guestMessage}`;
