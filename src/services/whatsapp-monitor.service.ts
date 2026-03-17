@@ -132,8 +132,20 @@ export class WhatsAppMonitorService {
 
       // Generate AI response with full conversation context
       const conversationMessages = await databaseService.getMessagesByConversation(conversation.id);
+      await databaseService.supersedePendingAiResponses(conversation.id);
       const aiResponse = await openAIService.generateResponse(guestContext, conversationMessages);
       console.log('🤖 AI Response:', aiResponse);
+
+      if (aiResponse && !aiResponse.startsWith('⚠️')) {
+        await databaseService.createAiResponse({
+          conversation_id: conversation.id,
+          content: aiResponse,
+          source_message_ids: [savedMessage.id],
+          unanswered_message_count: 1,
+          model: 'gpt-5-mini-2025-08-07',
+        });
+        console.log('💾 AI response saved to DB');
+      }
 
       // Mark WhatsApp message as read
       await whatsappService.markAsRead(messageId);

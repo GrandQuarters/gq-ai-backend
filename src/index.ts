@@ -209,6 +209,9 @@ app.post('/api/messages/send', async (req, res) => {
       action_required: false,
     });
 
+    // Clear pending AI responses for this conversation
+    await databaseService.supersedePendingAiResponses(conversationId);
+
     // Save training example: guest messages this reply addresses + the admin reply
     try {
       const allMsgs = await databaseService.getMessagesByConversation(conversationId);
@@ -319,13 +322,38 @@ app.post('/api/conversations/:id/generate-ai', async (req, res) => {
     };
 
     console.log(`🤖 Manually generating AI response for conversation ${conversationId} (${contact.name})`);
+    await databaseService.supersedePendingAiResponses(conversationId);
     const aiResponse = await openAIService.generateResponse(guestContext, allMessages);
     console.log('🤖 AI Response:', aiResponse);
+
+    if (aiResponse && !aiResponse.startsWith('⚠️')) {
+      await databaseService.createAiResponse({
+        conversation_id: conversationId,
+        content: aiResponse,
+        source_message_ids: lastGuestMsg ? [lastGuestMsg.id] : [],
+        unanswered_message_count: 1,
+        model: 'gpt-5-mini-2025-08-07',
+      });
+    }
 
     res.json({ aiSuggestion: aiResponse });
   } catch (error: any) {
     console.error('❌ Error generating AI response:', error);
     res.status(500).json({ error: error.message || 'Failed to generate AI response' });
+  }
+});
+
+// Get pending AI suggestion for a conversation
+app.get('/api/conversations/:id/pending-ai', async (req, res) => {
+  try {
+    const pending = await databaseService.getPendingAiResponse(req.params.id);
+    if (!pending) {
+      return res.json({ aiSuggestion: null });
+    }
+    res.json({ aiSuggestion: pending.content, aiResponseId: pending.id });
+  } catch (error) {
+    console.error('❌ Error fetching pending AI response:', error);
+    res.status(500).json({ error: 'Failed to fetch pending AI response' });
   }
 });
 
