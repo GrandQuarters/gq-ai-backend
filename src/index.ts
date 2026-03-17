@@ -257,10 +257,6 @@ app.post('/api/messages/:id/retry-translation', async (req, res) => {
 
     const sourceText = message.original_content || message.content;
 
-    if (!openAIService.needsTranslation(sourceText)) {
-      return res.json({ content: message.content, originalContent: message.original_content || null, alreadyTranslated: true });
-    }
-
     console.log(`🌐 Translating message ${req.params.id}...`);
     const translated = await openAIService.translateToGerman(sourceText);
 
