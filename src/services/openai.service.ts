@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { Message } from './database.service';
+import { Message, databaseService } from './database.service';
 
 const SYSTEM_PROMPT_TEMPLATE = `1. Rolle und Ziel (Hintergrundwissen)
 
@@ -253,7 +253,13 @@ Wichtig: Erwähne den Namen „Grand Quarters" in solchen Antworten, damit der G
 
 Bei Gästen, die noch nicht gebucht haben (reine Anfragen), ist die Plattformüberwachung besonders streng. Sei hier besonders aufmerksam und vermeide jegliche Formulierung, die als Versuch gewertet werden könnte, den Gast von der Plattform wegzuleiten. Bei bereits gebuchten Gästen ist die Überwachung weniger streng, aber halte dich trotzdem immer an die oben genannten Regeln.
 
-15. FAQ-Bereich (WIRD VOM ENTWICKLER ERGÄNZT)
+15. Vergangene Konversationen (Lernbeispiele)
+
+Die folgenden Beispiele stammen aus echten, vergangenen Gästekommunikationen. Nutze diese als Referenz, um deinen Ton, deine Formulierungen und deine Lösungsansätze zu verbessern. Jeder Block zeigt, welche Gastnachrichten eingegangen sind und wie darauf geantwortet wurde. Orientiere dich an diesem Stil und passe deine Antworten entsprechend an.
+
+{TRAINING_EXAMPLES}
+
+16. FAQ-Bereich 
 
 Hier werden häufig gestellte Fragen und standardisierte Antworten eingefügt.
 
@@ -374,7 +380,7 @@ By default, the codes activate at 3pm sharp. If you have an early check-in confi
 Do you allow pets?
 We love pets at Grand Quarters. As some of our guests are allergic to cat and dogs hair, we need to handle each case individually. We kindly as you to send us a request prior to your booking.
 
-16. Wichtigste Regeln (Zusammenfassung)
+17. Wichtigste Regeln (Zusammenfassung)
 
 Du musst IMMER:
 
@@ -542,13 +548,26 @@ function getOfficeStatus(): string {
   return (hour >= 9 && hour < 18) ? 'open' : 'closed';
 }
 
-function buildSystemPrompt(context: GuestContext, messages: Message[]): string {
+async function buildSystemPrompt(context: GuestContext, messages: Message[]): Promise<string> {
   const now = new Date();
   const currentDate = now.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
   const currentTime = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
   const officeStatus = getOfficeStatus();
 
   const { readHistory, unreadMessages } = buildChatSections(messages, context.guestName);
+
+  let trainingExamplesBlock = '(Noch keine vergangenen Beispiele vorhanden)';
+  try {
+    const examples = await databaseService.getTrainingExamples(50);
+    if (examples.length > 0) {
+      trainingExamplesBlock = examples.map((ex, i) => {
+        const date = new Date(ex.created_at).toLocaleDateString('de-DE');
+        return `--- Beispiel ${i + 1} (${ex.guest_name}, ${ex.platform}, ${date}) ---\nGast:\n${ex.guest_messages}\n\nUnsere Antwort:\n${ex.admin_reply}`;
+      }).join('\n\n');
+    }
+  } catch (err: any) {
+    console.warn('⚠️ Could not load training examples:', err.message);
+  }
 
   const resolvedValues: Record<string, string> = {
     GUEST_NAME: context.guestName,
@@ -592,6 +611,7 @@ function buildSystemPrompt(context: GuestContext, messages: Message[]): string {
   console.log('│ 🕐 Date/Time:   ', resolvedValues.CURRENT_DATE, resolvedValues.CURRENT_TIME);
   console.log('│ 🏢 Office:      ', resolvedValues.OFFICE_STATUS);
   console.log('│ 💬 Total msgs:  ', messages.length);
+  console.log('│ 📚 Training ex: ', trainingExamplesBlock === '(Noch keine vergangenen Beispiele vorhanden)' ? '0' : trainingExamplesBlock.split('--- Beispiel').length - 1);
   console.log('├─────────────────────────────────────────────');
   console.log('│ 📖 Gelesener Chatverlauf:');
   readHistory.split('\n').forEach((line) => console.log('│   ', line));
@@ -605,6 +625,7 @@ function buildSystemPrompt(context: GuestContext, messages: Message[]): string {
   }
   prompt = prompt.replace('{READ_CHAT_HISTORY}', readHistory);
   prompt = prompt.replace('{UNREAD_MESSAGES}', unreadMessages);
+  prompt = prompt.replace('{TRAINING_EXAMPLES}', trainingExamplesBlock);
 
   return prompt;
 }
@@ -641,7 +662,7 @@ export class OpenAIService {
     const startTime = Date.now();
 
     try {
-      const systemPrompt = buildSystemPrompt(context, allMessages);
+      const systemPrompt = await buildSystemPrompt(context, allMessages);
       console.log('🤖 OpenAI generateResponse: System prompt built (' + systemPrompt.length + ' chars), calling gpt-5-mini-2025-08-07...');
 
       const response = await client.chat.completions.create({

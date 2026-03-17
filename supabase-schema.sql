@@ -14,6 +14,7 @@ DROP FUNCTION IF EXISTS update_updated_at_column() CASCADE;
 DROP FUNCTION IF EXISTS get_unanswered_messages(UUID) CASCADE;
 DROP FUNCTION IF EXISTS get_or_supersede_pending_ai_response(UUID) CASCADE;
 
+DROP TABLE IF EXISTS ai_training_examples CASCADE;
 DROP TABLE IF EXISTS ai_responses CASCADE;
 DROP TABLE IF EXISTS processed_messages CASCADE;
 DROP TABLE IF EXISTS messages CASCADE;
@@ -126,6 +127,22 @@ CREATE TABLE processed_messages (
 CREATE INDEX idx_processed_messages_platform ON processed_messages(platform);
 
 -- ==========================================
+-- AI_TRAINING_EXAMPLES TABLE
+-- Stores past guest→admin exchanges so the AI learns from real replies
+-- ==========================================
+CREATE TABLE ai_training_examples (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  conversation_id UUID REFERENCES conversations(id) ON DELETE SET NULL,
+  platform VARCHAR(50),
+  guest_name VARCHAR(255),
+  guest_messages TEXT NOT NULL,
+  admin_reply TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_training_examples_created ON ai_training_examples(created_at DESC);
+
+-- ==========================================
 -- FUNCTIONS & TRIGGERS
 -- ==========================================
 
@@ -211,6 +228,7 @@ ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_responses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE processed_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_training_examples ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow all for service role" ON contacts
   FOR ALL TO authenticated USING (true) WITH CHECK (true);
@@ -227,6 +245,9 @@ CREATE POLICY "Allow all for service role" ON ai_responses
 CREATE POLICY "Allow all for service role" ON processed_messages
   FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
+CREATE POLICY "Allow all for service role" ON ai_training_examples
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
 -- ==========================================
 -- TABLE COMMENTS
 -- ==========================================
@@ -236,6 +257,7 @@ COMMENT ON TABLE conversations IS 'Individual conversation threads with guests';
 COMMENT ON TABLE messages IS 'All messages (sent and received) in conversations';
 COMMENT ON TABLE ai_responses IS 'AI-generated responses: pending, sent, superseded, discarded';
 COMMENT ON TABLE processed_messages IS 'Prevents duplicate processing of Gmail/WhatsApp messages';
+COMMENT ON TABLE ai_training_examples IS 'Past guest→admin exchanges used as learning examples in the AI system prompt';
 
 COMMENT ON COLUMN conversations.property_name IS 'Property name for safe conversation merging when platform creates new threads';
 COMMENT ON COLUMN messages.original_content IS 'Original untranslated content (set when message was auto-translated)';

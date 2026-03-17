@@ -209,6 +209,37 @@ app.post('/api/messages/send', async (req, res) => {
       action_required: false,
     });
 
+    // Save training example: guest messages this reply addresses + the admin reply
+    try {
+      const allMsgs = await databaseService.getMessagesByConversation(conversationId);
+      const msgsBeforeReply = allMsgs.filter((m) => m.id !== savedMessage.id);
+      let lastOwnIdx = -1;
+      for (let i = msgsBeforeReply.length - 1; i >= 0; i--) {
+        if (msgsBeforeReply[i].is_own) { lastOwnIdx = i; break; }
+      }
+      const unansweredGuest = msgsBeforeReply
+        .slice(lastOwnIdx + 1)
+        .filter((m) => !m.is_own);
+
+      if (unansweredGuest.length > 0) {
+        const guestBlock = unansweredGuest.map((m) => {
+          const text = m.original_content || m.content;
+          return `[${new Date(m.sent_at).toLocaleString('de-DE')}] ${text}`;
+        }).join('\n');
+
+        await databaseService.saveTrainingExample({
+          conversation_id: conversationId,
+          platform: conversation.platform,
+          guest_name: contact.name,
+          guest_messages: guestBlock,
+          admin_reply: content,
+        });
+        console.log(`📚 Training example saved: ${unansweredGuest.length} guest msg(s) → admin reply`);
+      }
+    } catch (trainErr: any) {
+      console.warn('⚠️ Failed to save training example:', trainErr.message);
+    }
+
     res.json({ success: true, messageId: savedMessage.id });
   } catch (error) {
     console.error('❌ Error sending message:', error);

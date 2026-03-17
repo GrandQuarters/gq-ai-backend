@@ -413,6 +413,41 @@ export class DatabaseService {
     if (error) throw error;
     return data;
   }
+
+  // ==========================================
+  // AI TRAINING EXAMPLES
+  // ==========================================
+
+  async saveTrainingExample(params: {
+    conversation_id: string;
+    platform: string;
+    guest_name: string;
+    guest_messages: string;
+    admin_reply: string;
+  }): Promise<void> {
+    const { error } = await this.getClient()
+      .from('ai_training_examples')
+      .insert(params);
+
+    if (error) throw error;
+  }
+
+  async getTrainingExamples(limit = 50): Promise<Array<{
+    guest_name: string;
+    platform: string;
+    guest_messages: string;
+    admin_reply: string;
+    created_at: string;
+  }>> {
+    const { data, error } = await this.getClient()
+      .from('ai_training_examples')
+      .select('guest_name, platform, guest_messages, admin_reply, created_at')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+    return data || [];
+  }
 }
 
 export const databaseService = new DatabaseService();
