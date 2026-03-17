@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import http from 'http';
 import url from 'url';
+import open from 'open';
 
 const SCOPES = ['https://www.googleapis.com/auth/gmail.modify'];
 const TOKEN_PATH = path.join(__dirname, '../../token.json');
@@ -129,14 +130,9 @@ export class GmailAuthService {
         }
       });
 
-      server.listen(4000, async () => {
+      server.listen(4000, () => {
         console.log('🚀 Listening on http://localhost:4000');
-        try {
-          const { default: open } = await import('open');
-          open(authUrl);
-        } catch {
-          console.log('⚠️ Could not auto-open browser. Please open the URL above manually.');
-        }
+        open(authUrl);
       });
     });
   }

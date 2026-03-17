@@ -4,6 +4,10 @@ import { databaseService } from './database.service';
 import { openAIService, GuestContext } from './openai.service';
 import { WebSocket } from 'ws';
 
+function stripBookingInfo(text: string): string {
+  return text.replace(/\[BOOKING_INFO\].*?\[\/BOOKING_INFO\]\s*/s, '').trim();
+}
+
 export class MessageMonitorService {
   private isRunning = false;
   private pollInterval: NodeJS.Timeout | null = null;
@@ -187,7 +191,7 @@ export class MessageMonitorService {
             email_thread_id: parsed.threadId,
             platform_conversation_hash: parsed.platformConversationHash || null,
             property_name: parsed.propertyName || null,
-            last_message: parsed.message.substring(0, 100),
+            last_message: stripBookingInfo(parsed.message).substring(0, 100),
             unread_count: 1,
             is_pinned: false,
             action_required: false,
@@ -199,7 +203,7 @@ export class MessageMonitorService {
         } else {
           // Update existing conversation
           await databaseService.updateConversation(conversation.id, {
-            last_message: parsed.message.substring(0, 100),
+            last_message: stripBookingInfo(parsed.message).substring(0, 100),
             unread_count: conversation.unread_count + 1,
             action_required: false,
           });
@@ -214,10 +218,14 @@ export class MessageMonitorService {
         if (openAIService.needsTranslation(parsed.message)) {
           console.log('🌐 Translating message to German...');
           const translated = await openAIService.translateToGerman(parsed.message);
-          // Always store original so the toggle button appears for non-Latin messages
-          originalContent = parsed.message;
-          messageContent = translated;
-          console.log('✅ Translation result:', translated.substring(0, 80));
+          if (translated && !translated.startsWith('⚠️')) {
+            originalContent = parsed.message;
+            messageContent = translated;
+            console.log('✅ Translation result:', translated.substring(0, 80));
+          } else {
+            console.log('⚠️ Translation failed, keeping original message');
+            originalContent = null;
+          }
         }
 
         // Build raw email data for debugging

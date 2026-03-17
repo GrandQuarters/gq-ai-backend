@@ -62,7 +62,6 @@ app.get('/api/conversations', async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('❌ Error fetching conversations:', error);
-    // Return empty array instead of error object so frontend doesn't crash
     res.status(200).json([]);
   }
 });
@@ -85,7 +84,10 @@ app.get('/api/conversations/:id/messages', async (req, res) => {
     }));
 
     res.json(result);
-  } catch (error) {
+  } catch (error: any) {
+    // #region agent log
+    console.error(`📋 GET /messages ERROR for ${req.params.id}:`, error?.message || error);
+    // #endregion
     console.error('❌ Error fetching messages:', error);
     res.status(200).json([]);
   }
@@ -106,6 +108,17 @@ app.get('/api/messages/:id/raw', async (req, res) => {
   } catch (error) {
     console.error('❌ Error fetching raw email:', error);
     res.status(500).json({ error: 'Failed to fetch raw email data' });
+  }
+});
+
+// Mark conversation as read (reset unread count)
+app.post('/api/conversations/:id/read', async (req, res) => {
+  try {
+    await databaseService.updateConversation(req.params.id, { unread_count: 0 });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('❌ Error marking conversation as read:', error);
+    res.status(500).json({ error: 'Failed to mark as read' });
   }
 });
 

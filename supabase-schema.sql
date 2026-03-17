@@ -58,8 +58,8 @@ CREATE TABLE conversations (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX idx_conversations_thread ON conversations(email_thread_id) WHERE email_thread_id IS NOT NULL;
-CREATE UNIQUE INDEX idx_conversations_hash ON conversations(platform_conversation_hash) WHERE platform_conversation_hash IS NOT NULL;
+CREATE UNIQUE INDEX idx_conversations_thread ON conversations(email_thread_id);
+CREATE UNIQUE INDEX idx_conversations_hash ON conversations(platform_conversation_hash);
 CREATE INDEX idx_conversations_contact ON conversations(contact_id);
 CREATE INDEX idx_conversations_platform ON conversations(platform);
 CREATE INDEX idx_conversations_updated ON conversations(updated_at DESC);
@@ -85,7 +85,7 @@ CREATE TABLE messages (
   delivered_at TIMESTAMPTZ
 );
 
-CREATE UNIQUE INDEX idx_messages_external ON messages(external_message_id) WHERE external_message_id IS NOT NULL;
+CREATE UNIQUE INDEX idx_messages_external ON messages(external_message_id);
 CREATE INDEX idx_messages_conversation ON messages(conversation_id, sent_at);
 CREATE INDEX idx_messages_is_own ON messages(conversation_id, is_own);
 

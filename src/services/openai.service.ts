@@ -498,7 +498,8 @@ function formatMessageLine(msg: Message, guestName: string): string {
   const time = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
   const date = d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
   const sender = msg.is_own ? 'Moe(wir)' : guestName;
-  return `${sender} ${time} ${date}: ${msg.content}`;
+  const text = (!msg.is_own && msg.original_content) ? msg.original_content : msg.content;
+  return `${sender} ${time} ${date}: ${text}`;
 }
 
 function buildChatSections(

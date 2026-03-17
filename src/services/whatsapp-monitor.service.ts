@@ -84,10 +84,14 @@ export class WhatsAppMonitorService {
       if (openAIService.needsTranslation(messageContent)) {
         console.log('🌐 Translating WhatsApp message to German...');
         const translated = await openAIService.translateToGerman(messageContent);
-        // Always store original so the toggle button appears for non-Latin messages
-        originalContent = messageContent;
-        finalContent = translated;
-        console.log('✅ Translation result:', translated.substring(0, 80));
+        if (translated && !translated.startsWith('⚠️')) {
+          originalContent = messageContent;
+          finalContent = translated;
+          console.log('✅ Translation result:', translated.substring(0, 80));
+        } else {
+          console.log('⚠️ Translation failed, keeping original message');
+          originalContent = null;
+        }
       }
 
       // Save message
