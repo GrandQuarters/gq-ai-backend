@@ -635,11 +635,11 @@ export class OpenAIService {
   private getClient(): OpenAI | null {
     if (!this.initialized) {
       this.initialized = true;
-      const apiKey = process.env.OPENAI_API_KEY;
-      if (!apiKey || apiKey === 'your-openai-key-here') {
-        console.warn('⚠️  OpenAI API key not set. AI responses will be disabled.');
-      } else {
-        this.openai = new OpenAI({ apiKey });
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey || apiKey === 'your-openai-key-here') {
+      console.warn('⚠️  OpenAI API key not set. AI responses will be disabled.');
+    } else {
+      this.openai = new OpenAI({ apiKey });
         console.log('✅ OpenAI client initialized');
       }
     }

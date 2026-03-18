@@ -41,9 +41,11 @@ app.get('/api/conversations', async (req, res) => {
   try {
     const conversations = await databaseService.getConversations();
     const contacts = await databaseService.getContacts();
+    const lastMessageTimes = await databaseService.getLastMessageTimes();
 
     const result = conversations.map((conv) => {
       const contact = contacts.find((c) => c.id === conv.contact_id);
+      const lastMsgTime = lastMessageTimes[conv.id];
       return {
         id: conv.id,
         name: contact?.name || 'Unknown Guest',
@@ -51,7 +53,7 @@ app.get('/api/conversations', async (req, res) => {
         isGroup: false,
         participants: [],
         lastMessage: conv.last_message || '',
-        lastMessageTime: conv.updated_at ? new Date(conv.updated_at) : new Date(),
+        lastMessageTime: lastMsgTime ? new Date(lastMsgTime) : (conv.updated_at ? new Date(conv.updated_at) : new Date()),
         unreadCount: conv.unread_count || 0,
         pinned: conv.is_pinned,
         online: false,

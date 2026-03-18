@@ -154,6 +154,24 @@ export class DatabaseService {
     return data || [];
   }
 
+  async getLastMessageTimes(): Promise<Record<string, string>> {
+    const { data, error } = await this.getClient()
+      .from('messages')
+      .select('conversation_id, sent_at')
+      .order('sent_at', { ascending: false });
+
+    if (error) throw error;
+
+    // Keep only the latest sent_at per conversation_id
+    const result: Record<string, string> = {};
+    for (const row of (data || [])) {
+      if (!result[row.conversation_id]) {
+        result[row.conversation_id] = row.sent_at;
+      }
+    }
+    return result;
+  }
+
   async getConversationByThreadId(threadId: string): Promise<Conversation | null> {
     const { data, error } = await this.getClient()
       .from('conversations')
