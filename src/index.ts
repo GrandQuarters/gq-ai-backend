@@ -180,7 +180,7 @@ app.post('/api/messages/send', async (req, res) => {
       
       await gmailService.sendReply(
         contact.email || '',
-        `Re: ${originalGmailMsg.subject}`,
+        `${originalGmailMsg.subject}`,
         content,
         conversation.email_thread_id || '',
         originalMessageId || firstMessage.external_message_id || ''
