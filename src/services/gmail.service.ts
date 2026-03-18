@@ -116,7 +116,6 @@ export class GmailService {
     const emailLines = [
       `From: ${process.env.GMAIL_USER || 'me'}`,
       `To: ${to}`,
-      `Subject: ${subject}`,
       `In-Reply-To: ${inReplyTo}`,
       `References: ${inReplyTo}`,
       '',
