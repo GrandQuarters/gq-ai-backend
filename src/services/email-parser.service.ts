@@ -352,37 +352,60 @@ export class EmailParserService {
   private extractAirbnbBookingDetails(body: string): Record<string, string> | null {
     const details: Record<string, string> = {};
 
-    // Property name from subject-style line: "ANSPRECHENDE SUITE | ..."
-    // Usually appears after the room URL line
-    const propertyMatch = body.match(/airbnb\.\w+\/rooms\/\d+[^\n]*\n+\s*(.+?)(?:\s{2,}|\n)/);
-    if (propertyMatch) details.property = propertyMatch[1].trim();
-
-    // Check-in/Check-out dates: "26. März 2026" pattern
-    const datePattern = /(\d{1,2}\.\s*\w+\s*\d{4})/g;
-    const dates: string[] = [];
-    // Look in the block after "Check-in" / "Check-out"
-    const checkSection = body.match(/Check-in[\s\S]*?(?:GÄSTE|GUESTS|Hol dir)/i);
-    if (checkSection) {
-      let m;
-      while ((m = datePattern.exec(checkSection[0])) !== null) {
-        dates.push(m[1].trim());
+    // Guest name: line before "Buchende Person" / "Guest" / "Gast"
+    const lines = body.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      if (/^\s*(?:Buchende Person|Guest|Gast)\s*$/i.test(lines[i])) {
+        for (let j = i - 1; j >= 0; j--) {
+          const candidate = lines[j].trim();
+          if (candidate.length > 0 && candidate.length < 60) {
+            if (candidate.startsWith('http') || candidate.startsWith('%') || candidate.startsWith('[')) continue;
+            if (/kommuniziere|immer über airbnb/i.test(candidate)) continue;
+            const nameParts = candidate.split(/\s+/).filter(Boolean);
+            details.guest = nameParts.map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(' ');
+            break;
+          }
+        }
+        break;
       }
     }
-    if (dates.length >= 2) {
-      details.dates = `${dates[0]} – ${dates[1]}`;
-    } else if (dates.length === 1) {
-      details.dates = dates[0];
+
+    // Property name from BUCHUNG FÜR „..." line in subject area
+    const buchungMatch = body.match(/BUCHUNG FÜR\s+[„""](.+?)["""]|BOOKING FOR\s+[„""](.+?)["""]/i);
+    if (buchungMatch) {
+      details.property = (buchungMatch[1] || buchungMatch[2]).trim();
+    } else {
+      // Fallback: property name after room URL line (all-caps line)
+      const roomUrlIdx = body.indexOf('/rooms/');
+      if (roomUrlIdx !== -1) {
+        const afterRoom = body.substring(roomUrlIdx);
+        const afterLines = afterRoom.split('\n');
+        for (let i = 1; i < afterLines.length; i++) {
+          const t = afterLines[i].trim();
+          if (t.length > 5 && !t.startsWith('http') && !t.startsWith('[') && !t.startsWith('Apartment') && !t.startsWith('Haus')) {
+            details.property = t;
+            break;
+          }
+        }
+      }
     }
 
-    // Times
-    const checkinTime = body.match(/Check-in[\s\S]*?(\d{1,2}:\d{2})[\s\S]*?Check-out/i);
-    const checkoutTime = body.match(/Check-out[\s\S]*?(\d{1,2}:\d{2})[\s\S]*?(?:GÄSTE|GUESTS)/i);
-    if (checkinTime) details.checkIn = (dates[0] || '') + ' ' + checkinTime[1];
-    if (checkoutTime) details.checkOut = (dates[1] || '') + ' ' + checkoutTime[1];
-    if (details.checkIn && details.checkOut) {
-      details.dates = `${details.checkIn} – ${details.checkOut}`;
-      delete details.checkIn;
-      delete details.checkOut;
+    // Check-in/Check-out: find the section between "Check-in" and "GÄSTE"/"GUESTS"
+    const checkSection = body.match(/Check-in[\s\S]*?(?=GÄSTE|GUESTS|Hol dir)/i);
+    if (checkSection) {
+      const section = checkSection[0];
+      // Extract all dates like "26. März 2026"
+      const dateMatches = [...section.matchAll(/(\d{1,2}\.\s*\w+\s*\d{4})/g)].map(m => m[1].trim());
+      // Extract all times like "15:00"
+      const timeMatches = [...section.matchAll(/\b(\d{1,2}:\d{2})\b/g)].map(m => m[1]);
+
+      if (dateMatches.length >= 2 && timeMatches.length >= 2) {
+        details.dates = `${dateMatches[0]}, ${timeMatches[0]} – ${dateMatches[1]}, ${timeMatches[1]}`;
+      } else if (dateMatches.length >= 2) {
+        details.dates = `${dateMatches[0]} – ${dateMatches[1]}`;
+      } else if (dateMatches.length === 1) {
+        details.dates = dateMatches[0];
+      }
     }
 
     // Guests
