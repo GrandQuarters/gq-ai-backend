@@ -394,9 +394,8 @@ export class EmailParserService {
     const checkSection = body.match(/Check-in[\s\S]*?(?=GÄSTE|GUESTS|Hol dir)/i);
     if (checkSection) {
       const section = checkSection[0];
-      // Extract all dates like "26. März 2026"
-      const dateMatches = [...section.matchAll(/(\d{1,2}\.\s*\w+\s*\d{4})/g)].map(m => m[1].trim());
-      // Extract all times like "15:00"
+      // \w doesn't match umlauts (ä,ö,ü) so use [^\s\d,] for month names like "März"
+      const dateMatches = [...section.matchAll(/(\d{1,2}\.\s*[A-Za-zÄÖÜäöüß]+\.?\s*\d{4})/g)].map(m => m[1].trim());
       const timeMatches = [...section.matchAll(/\b(\d{1,2}:\d{2})\b/g)].map(m => m[1]);
 
       if (dateMatches.length >= 2 && timeMatches.length >= 2) {
