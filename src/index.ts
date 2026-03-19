@@ -6,6 +6,7 @@ import { gmailService } from './services/gmail.service';
 import { databaseService } from './services/database.service';
 import { messageMonitorService } from './services/message-monitor.service';
 import { openAIService } from './services/openai.service';
+import { emailParserService } from './services/email-parser.service';
 import { whatsappService } from './services/whatsapp.service';
 import { whatsappMonitorService } from './services/whatsapp-monitor.service';
 
@@ -279,6 +280,61 @@ app.post('/api/messages/:id/retry-translation', async (req, res) => {
   } catch (error: any) {
     console.error('❌ Error retrying translation:', error);
     res.status(500).json({ error: error.message || 'Translation failed' });
+  }
+});
+
+// Re-parse a message from its stored raw email data
+app.post('/api/messages/:id/reparse', async (req, res) => {
+  try {
+    const message = await databaseService.getMessageById(req.params.id);
+    if (!message) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+    if (!message.raw_email_data) {
+      return res.status(400).json({ error: 'No raw email data stored for this message' });
+    }
+
+    const rawData = JSON.parse(message.raw_email_data);
+
+    const gmailMessage = {
+      id: rawData.gmailId || '',
+      threadId: rawData.threadId || '',
+      from: rawData.from || '',
+      to: rawData.to || '',
+      subject: rawData.subject || '',
+      body: rawData.body || '',
+      timestamp: new Date(),
+      platform: rawData.platform as any,
+      replyTo: rawData.replyTo || undefined,
+    };
+
+    const parsed = emailParserService.parseEmail(gmailMessage);
+    console.log(`🔄 Reparsed message ${req.params.id}: "${parsed.message.substring(0, 80)}..."`);
+
+    await databaseService.updateMessage(req.params.id, {
+      content: parsed.message,
+      original_content: null,
+    });
+
+    // Update contact name if parser found a better one
+    if (parsed.customerName && parsed.customerName !== 'Airbnb Guest' && parsed.customerName !== 'Booking.com Guest') {
+      const conversation = (await databaseService.getConversations()).find(
+        (c) => c.id === message.conversation_id
+      );
+      if (conversation) {
+        const contacts = await databaseService.getContacts();
+        const contact = contacts.find((c) => c.id === conversation.contact_id);
+        if (contact && (contact.name === 'Airbnb Guest' || contact.name === 'Booking.com Guest' || contact.name === 'Expedia Guest' || contact.name === 'Guest')) {
+          await databaseService.updateContact(contact.id, { name: parsed.customerName });
+          console.log(`👤 Updated contact name: ${contact.name} → ${parsed.customerName}`);
+        }
+      }
+    }
+
+    res.json({ content: parsed.message, originalContent: null });
+  } catch (error: any) {
+    console.error('❌ Error reparsing message:', error);
+    res.status(500).json({ error: error.message || 'Reparse failed' });
   }
 });
 

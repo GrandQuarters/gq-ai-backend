@@ -131,6 +131,16 @@ export class DatabaseService {
     return data;
   }
 
+  async updateContact(contactId: string, updates: Partial<Contact>): Promise<void> {
+    const { id, created_at, last_message_at, ...safeUpdates } = updates as any;
+    const { error } = await this.getClient()
+      .from('contacts')
+      .update(safeUpdates)
+      .eq('id', contactId);
+
+    if (error) throw error;
+  }
+
   async updateContactLastMessage(contactId: string): Promise<void> {
     const { error } = await this.getClient()
       .from('contacts')

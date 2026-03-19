@@ -341,7 +341,55 @@ export class EmailParserService {
     let clean = messageLines.join('\n');
     clean = clean.replace(/\n{3,}/g, '\n\n').trim();
 
+    const airbnbDetails = this.extractAirbnbBookingDetails(body);
+    if (airbnbDetails) {
+      return `[BOOKING_INFO]${JSON.stringify(airbnbDetails)}[/BOOKING_INFO]\n${clean}`;
+    }
+
     return clean;
+  }
+
+  private extractAirbnbBookingDetails(body: string): Record<string, string> | null {
+    const details: Record<string, string> = {};
+
+    // Property name from subject-style line: "ANSPRECHENDE SUITE | ..."
+    // Usually appears after the room URL line
+    const propertyMatch = body.match(/airbnb\.\w+\/rooms\/\d+[^\n]*\n+\s*(.+?)(?:\s{2,}|\n)/);
+    if (propertyMatch) details.property = propertyMatch[1].trim();
+
+    // Check-in/Check-out dates: "26. März 2026" pattern
+    const datePattern = /(\d{1,2}\.\s*\w+\s*\d{4})/g;
+    const dates: string[] = [];
+    // Look in the block after "Check-in" / "Check-out"
+    const checkSection = body.match(/Check-in[\s\S]*?(?:GÄSTE|GUESTS|Hol dir)/i);
+    if (checkSection) {
+      let m;
+      while ((m = datePattern.exec(checkSection[0])) !== null) {
+        dates.push(m[1].trim());
+      }
+    }
+    if (dates.length >= 2) {
+      details.dates = `${dates[0]} – ${dates[1]}`;
+    } else if (dates.length === 1) {
+      details.dates = dates[0];
+    }
+
+    // Times
+    const checkinTime = body.match(/Check-in[\s\S]*?(\d{1,2}:\d{2})[\s\S]*?Check-out/i);
+    const checkoutTime = body.match(/Check-out[\s\S]*?(\d{1,2}:\d{2})[\s\S]*?(?:GÄSTE|GUESTS)/i);
+    if (checkinTime) details.checkIn = (dates[0] || '') + ' ' + checkinTime[1];
+    if (checkoutTime) details.checkOut = (dates[1] || '') + ' ' + checkoutTime[1];
+    if (details.checkIn && details.checkOut) {
+      details.dates = `${details.checkIn} – ${details.checkOut}`;
+      delete details.checkIn;
+      delete details.checkOut;
+    }
+
+    // Guests
+    const guestsMatch = body.match(/(?:GÄSTE|GUESTS)\s*\n+\s*(.+)/i);
+    if (guestsMatch) details.guests = guestsMatch[1].trim();
+
+    return Object.keys(details).length > 0 ? details : null;
   }
 
   private extractBookingDetails(body: string): Record<string, string> | null {
