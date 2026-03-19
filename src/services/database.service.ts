@@ -442,6 +442,16 @@ export class DatabaseService {
     return data;
   }
 
+  async getPendingAiConversationIds(): Promise<string[]> {
+    const { data, error } = await this.getClient()
+      .from('ai_responses')
+      .select('conversation_id')
+      .eq('status', 'pending');
+
+    if (error) throw error;
+    return [...new Set((data || []).map((r: any) => r.conversation_id))];
+  }
+
   // ==========================================
   // AI TRAINING EXAMPLES
   // ==========================================

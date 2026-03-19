@@ -415,6 +415,17 @@ app.get('/api/conversations/:id/pending-ai', async (req, res) => {
   }
 });
 
+// Get conversation IDs with pending AI suggestions
+app.get('/api/pending-ai-ids', async (req, res) => {
+  try {
+    const ids = await databaseService.getPendingAiConversationIds();
+    res.json(ids);
+  } catch (error) {
+    console.error('❌ Error fetching pending AI IDs:', error);
+    res.status(200).json([]);
+  }
+});
+
 // Get action required conversation IDs
 app.get('/api/action-required', async (req, res) => {
   try {
