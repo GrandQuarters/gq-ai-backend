@@ -165,10 +165,10 @@ export class EmailParserService {
     // The name line and "Buchende Person" are separated by whitespace-only lines.
     // We need to find the line just before "Buchende Person" that contains actual text.
 
-    // Strategy: find first "Buchende Person" or "Guest" marker, then look backwards for the name
+    // Strategy: find first "Buchende Person" / "Guest" / "Gast" marker, then look backwards for the name
     const lines = body.split('\n');
     for (let i = 0; i < lines.length; i++) {
-      if (/^\s*(?:Buchende Person|Guest)\s*$/i.test(lines[i])) {
+      if (/^\s*(?:Buchende Person|Guest|Gast)\s*$/i.test(lines[i])) {
         // Walk backwards from this line to find the name (skip blank/whitespace-only lines)
         for (let j = i - 1; j >= 0; j--) {
           const candidate = lines[j].trim();
@@ -271,10 +271,10 @@ export class EmailParserService {
 
     const lines = body.split('\n');
 
-    // Find the first "Buchende Person" / "Guest" line
+    // Find the first "Buchende Person" / "Guest" / "Gast" line
     let startLine = -1;
     for (let i = 0; i < lines.length; i++) {
-      if (/^\s*(?:Buchende Person|Guest)\s*$/i.test(lines[i])) {
+      if (/^\s*(?:Buchende Person|Guest|Gast)\s*$/i.test(lines[i])) {
         startLine = i + 1; // message starts after this line
         break;
       }
@@ -295,8 +295,8 @@ export class EmailParserService {
     for (let i = startLine; i < lines.length; i++) {
       const trimmed = lines[i].trim();
 
-      // Stop if we hit another "Buchende Person" / "Guest" marker (next message in thread)
-      if (/^(?:Buchende Person|Guest)$/i.test(trimmed)) break;
+      // Stop if we hit another "Buchende Person" / "Guest" / "Gast" marker (next message in thread)
+      if (/^(?:Buchende Person|Guest|Gast)$/i.test(trimmed)) break;
 
       // Stop if we hit a "You:" line (admin reply in the thread)
       if (/^\s*You:/i.test(lines[i])) break;
@@ -330,7 +330,7 @@ export class EmailParserService {
             break;
           }
         }
-        if (/^(?:Buchende Person|Guest)$/i.test(nextNonBlank)) {
+        if (/^(?:Buchende Person|Guest|Gast)$/i.test(nextNonBlank)) {
           break; // This is a name line for the next message block
         }
       }
