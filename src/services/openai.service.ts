@@ -5,6 +5,9 @@ const SYSTEM_PROMPT_TEMPLATE = `1. Rolle und Ziel (Hintergrundwissen)
 
 Du bist Moe. Dir gehören in ganz Wien einige Apartments und du vermietest die auf allen möglichen Plattformen wie AirBnB und booking. Moe ist sehr Gastfreundlich und legt sehr hohen Wert auf Kundenzufriedenheit. Du sagst nie nein sondern versucht immer eine faire Lösung zu finden die den Gast zufrieden stellt. Moe hat Mitarbeiter, im Office sind Anna und Lisa, und im Standby Dienst gibt es noch Jacob und Henrik
 
+AKTUELL ANGEMELDETER MITARBEITER: {LOGGED_IN_MITARBEITER}
+Du antwortest IMMER im Namen dieses Mitarbeiters. Unterschreibe deine Nachrichten mit dem Namen dieses Mitarbeiters. Wenn du dich vorstellst oder verabschiedest, verwende IMMER den Namen des angemeldeten Mitarbeiters, NIEMALS einen anderen Namen.
+
 Dein Hauptziel ist:
 
 Gäste bestmöglich zu unterstützen
@@ -400,6 +403,8 @@ professionell bleiben
 
 Menschlich Antworten. NIEMALS unnötige Bindestriche im Text versuche gar keine zu verwenden!
 
+IMMER im Namen des angemeldeten Mitarbeiters ({LOGGED_IN_MITARBEITER}) unterschreiben und antworten. Verwende KEINEN anderen Namen als Absender.
+
 Du darfst NIEMALS:
 
 unfreundlich sein
@@ -477,6 +482,8 @@ WICHTIG – Schreibstil: Verwende NIEMALS Gedankenstriche (– oder —) mitten 
 
 WICHTIG – Sprache: Du darfst NUR auf Deutsch oder Englisch antworten. Wenn der Gast Deutsch schreibt, antworte auf Deutsch. Wenn der Gast Englisch oder eine andere Sprache schreibt, antworte auf Englisch. Antworte NIEMALS auf Französisch, Koreanisch, Arabisch, Chinesisch oder irgendeiner anderen Sprache.
 
+WICHTIG – Absender: Du antwortest im Namen von {LOGGED_IN_MITARBEITER}. Unterschreibe die Nachricht mit diesem Namen. Verwende NIEMALS einen anderen Namen als Absender.
+
 Antworte nur mit der Nachricht an den Gast.`;
 
 export interface GuestContext {
@@ -546,11 +553,30 @@ function getOfficeStatus(): string {
   return (hour >= 9 && hour < 18) ? 'open' : 'closed';
 }
 
+async function getLoggedInMitarbeiter(): Promise<string> {
+  try {
+    const client = databaseService.getSupabaseClient();
+    const { data } = await client.auth.admin.listUsers();
+    if (data?.users && data.users.length > 0) {
+      const sorted = [...data.users]
+        .filter(u => u.last_sign_in_at)
+        .sort((a, b) => new Date(b.last_sign_in_at!).getTime() - new Date(a.last_sign_in_at!).getTime());
+      if (sorted.length > 0) {
+        return sorted[0].user_metadata?.name || sorted[0].email?.split('@')[0] || 'Moe';
+      }
+    }
+  } catch (err: any) {
+    console.warn('⚠️ Could not determine logged-in user:', err.message);
+  }
+  return 'Moe';
+}
+
 async function buildSystemPrompt(context: GuestContext, messages: Message[]): Promise<string> {
   const now = new Date();
   const currentDate = now.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
   const currentTime = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
   const officeStatus = getOfficeStatus();
+  const loggedInMitarbeiter = await getLoggedInMitarbeiter();
 
   const { readHistory, unreadMessages } = buildChatSections(messages, context.guestName);
 
@@ -583,6 +609,7 @@ async function buildSystemPrompt(context: GuestContext, messages: Message[]): Pr
     CHECKOUT_TIME: context.checkoutTime || '11:00',
     NUMBER_OF_NIGHTS: context.numberOfNights || 'Unbekannt',
     STAY_STATUS: context.stayStatus || 'unknown',
+    LOGGED_IN_MITARBEITER: loggedInMitarbeiter,
     CURRENT_DATE: currentDate,
     CURRENT_TIME: currentTime,
     OFFICE_STATUS: officeStatus,
@@ -608,6 +635,7 @@ async function buildSystemPrompt(context: GuestContext, messages: Message[]): Pr
   console.log('├─────────────────────────────────────────────');
   console.log('│ 🕐 Date/Time:   ', resolvedValues.CURRENT_DATE, resolvedValues.CURRENT_TIME);
   console.log('│ 🏢 Office:      ', resolvedValues.OFFICE_STATUS);
+  console.log('│ 👤 Mitarbeiter: ', resolvedValues.LOGGED_IN_MITARBEITER);
   console.log('│ 💬 Total msgs:  ', messages.length);
   console.log('│ 📚 Training ex: ', trainingExamplesBlock === '(Noch keine vergangenen Beispiele vorhanden)' ? '0' : trainingExamplesBlock.split('--- Beispiel').length - 1);
   console.log('├─────────────────────────────────────────────');
@@ -619,7 +647,7 @@ async function buildSystemPrompt(context: GuestContext, messages: Message[]): Pr
 
   let prompt = SYSTEM_PROMPT_TEMPLATE;
   for (const [key, value] of Object.entries(resolvedValues)) {
-    prompt = prompt.replace(`{${key}}`, value);
+    prompt = prompt.split(`{${key}}`).join(value);
   }
   prompt = prompt.replace('{READ_CHAT_HISTORY}', readHistory);
   prompt = prompt.replace('{UNREAD_MESSAGES}', unreadMessages);
