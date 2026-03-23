@@ -263,20 +263,26 @@ app.post('/api/messages/:id/retry-translation', async (req, res) => {
 
     const sourceText = message.original_content || message.content;
 
+    // Strip [BOOKING_INFO] before translation so AI doesn't mangle it
+    const bookingMatch = sourceText.match(/^(\[BOOKING_INFO\].*?\[\/BOOKING_INFO\]\n?)([\s\S]*)$/);
+    const bookingPrefix = bookingMatch ? bookingMatch[1] : '';
+    const textToTranslate = bookingMatch ? bookingMatch[2] : sourceText;
+
     console.log(`🌐 Translating message ${req.params.id}...`);
-    const translated = await openAIService.translateToGerman(sourceText);
+    const translated = await openAIService.translateToGerman(textToTranslate);
 
     if (!translated || translated.startsWith('⚠️')) {
       return res.status(502).json({ error: translated || 'Translation failed' });
     }
 
+    const finalContent = bookingPrefix + translated;
     await databaseService.updateMessage(req.params.id, {
-      content: translated,
+      content: finalContent,
       original_content: sourceText,
     });
 
     console.log(`✅ Translation saved for message ${req.params.id}`);
-    res.json({ content: translated, originalContent: sourceText });
+    res.json({ content: finalContent, originalContent: sourceText });
   } catch (error: any) {
     console.error('❌ Error retrying translation:', error);
     res.status(500).json({ error: error.message || 'Translation failed' });

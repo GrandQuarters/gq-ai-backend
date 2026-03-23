@@ -215,12 +215,18 @@ export class MessageMonitorService {
         // Translate non-German/English messages
         let messageContent = parsed.message;
         let originalContent: string | null = null;
-        if (openAIService.needsTranslation(parsed.message)) {
+
+        // Strip [BOOKING_INFO] before translation so AI doesn't mangle it
+        const bookingInfoMatch = parsed.message.match(/^(\[BOOKING_INFO\].*?\[\/BOOKING_INFO\]\n?)([\s\S]*)$/);
+        const bookingInfoPrefix = bookingInfoMatch ? bookingInfoMatch[1] : '';
+        const textToTranslate = bookingInfoMatch ? bookingInfoMatch[2] : parsed.message;
+
+        if (openAIService.needsTranslation(textToTranslate)) {
           console.log('🌐 Translating message to German...');
-          const translated = await openAIService.translateToGerman(parsed.message);
+          const translated = await openAIService.translateToGerman(textToTranslate);
           if (translated && !translated.startsWith('⚠️')) {
             originalContent = parsed.message;
-            messageContent = translated;
+            messageContent = bookingInfoPrefix + translated;
             console.log('✅ Translation result:', translated.substring(0, 80));
           } else {
             console.log('⚠️ Translation failed, keeping original message');
