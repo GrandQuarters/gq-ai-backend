@@ -498,6 +498,14 @@ app.post('/api/admin/users', async (req, res) => {
 
 app.delete('/api/admin/users/:id', async (req, res) => {
   try {
+    const { password, email } = req.body || {};
+    if (password && email) {
+      const client = databaseService.getSupabaseClient();
+      const { error: signInError } = await client.auth.signInWithPassword({ email, password });
+      if (signInError) {
+        return res.status(401).json({ error: 'Falsches Passwort' });
+      }
+    }
     const client = databaseService.getSupabaseClient();
     const { error } = await client.auth.admin.deleteUser(req.params.id);
     if (error) throw error;
@@ -505,6 +513,29 @@ app.delete('/api/admin/users/:id', async (req, res) => {
   } catch (error: any) {
     console.error('❌ Error deleting user:', error);
     res.status(500).json({ error: error.message || 'Failed to delete user' });
+  }
+});
+
+app.post('/api/admin/users/:id/change-password', async (req, res) => {
+  try {
+    const { oldPassword, newPassword, email } = req.body;
+    if (!oldPassword || !newPassword || !email) {
+      return res.status(400).json({ error: 'Alle Felder erforderlich' });
+    }
+
+    const client = databaseService.getSupabaseClient();
+    const { error: signInError } = await client.auth.signInWithPassword({ email, password: oldPassword });
+    if (signInError) {
+      return res.status(401).json({ error: 'Aktuelles Passwort ist falsch' });
+    }
+
+    const { error } = await client.auth.admin.updateUserById(req.params.id, { password: newPassword });
+    if (error) throw error;
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('❌ Error changing password:', error);
+    res.status(500).json({ error: error.message || 'Failed to change password' });
   }
 });
 
