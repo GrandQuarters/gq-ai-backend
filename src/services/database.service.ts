@@ -49,6 +49,10 @@ export interface Message {
 export class DatabaseService {
   private supabase: SupabaseClient | null = null;
 
+  getSupabaseClient(): SupabaseClient {
+    return this.getClient();
+  }
+
   private getClient(): SupabaseClient {
     if (this.supabase) return this.supabase;
 

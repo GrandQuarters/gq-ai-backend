@@ -447,6 +447,67 @@ app.get('/api/action-required', async (req, res) => {
   }
 });
 
+// ==========================================
+// ADMIN USER MANAGEMENT
+// ==========================================
+
+app.get('/api/admin/users', async (req, res) => {
+  try {
+    const client = databaseService.getSupabaseClient();
+    const { data, error } = await client.auth.admin.listUsers();
+    if (error) throw error;
+    const users = (data?.users || []).map((u: any) => ({
+      id: u.id,
+      email: u.email,
+      name: u.user_metadata?.name || u.email?.split('@')[0] || 'Unbenannt',
+      created_at: u.created_at,
+      last_sign_in_at: u.last_sign_in_at,
+    }));
+    res.json(users);
+  } catch (error: any) {
+    console.error('❌ Error listing users:', error);
+    res.status(500).json({ error: error.message || 'Failed to list users' });
+  }
+});
+
+app.post('/api/admin/users', async (req, res) => {
+  try {
+    const { email, password, name } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'E-Mail und Passwort erforderlich' });
+    }
+    const client = databaseService.getSupabaseClient();
+    const { data, error } = await client.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { name: name || email.split('@')[0] },
+    });
+    if (error) throw error;
+    res.json({
+      id: data.user.id,
+      email: data.user.email,
+      name: data.user.user_metadata?.name || email.split('@')[0],
+      created_at: data.user.created_at,
+    });
+  } catch (error: any) {
+    console.error('❌ Error creating user:', error);
+    res.status(500).json({ error: error.message || 'Failed to create user' });
+  }
+});
+
+app.delete('/api/admin/users/:id', async (req, res) => {
+  try {
+    const client = databaseService.getSupabaseClient();
+    const { error } = await client.auth.admin.deleteUser(req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('❌ Error deleting user:', error);
+    res.status(500).json({ error: error.message || 'Failed to delete user' });
+  }
+});
+
 // WhatsApp webhook verification (GET)
 app.get('/webhook/whatsapp', (req, res) => {
   const mode = req.query['hub.mode'];
