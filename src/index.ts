@@ -322,22 +322,50 @@ app.post('/api/messages/:id/reparse', async (req, res) => {
       original_content: null,
     });
 
-    // Update contact name if parser found a better one
-    if (parsed.customerName && parsed.customerName !== 'Airbnb Guest' && parsed.customerName !== 'Booking.com Guest') {
-      const conversation = (await databaseService.getConversations()).find(
-        (c) => c.id === message.conversation_id
-      );
-      if (conversation) {
-        const contacts = await databaseService.getContacts();
-        const contact = contacts.find((c) => c.id === conversation.contact_id);
-        if (contact && (contact.name === 'Airbnb Guest' || contact.name === 'Booking.com Guest' || contact.name === 'Expedia Guest' || contact.name === 'Guest')) {
-          await databaseService.updateContact(contact.id, { name: parsed.customerName });
-          console.log(`👤 Updated contact name: ${contact.name} → ${parsed.customerName}`);
-        }
+    const conversation = (await databaseService.getConversations()).find(
+      (c) => c.id === message.conversation_id
+    );
+
+    if (conversation) {
+      const contacts = await databaseService.getContacts();
+      const contact = contacts.find((c) => c.id === conversation.contact_id);
+
+      // Update contact name if parser found a real name and current is a generic fallback
+      const genericNames = ['Airbnb Guest', 'Booking.com Guest', 'Expedia Guest', 'FeWo-direkt Guest', 'Guest', 'Unknown'];
+      if (
+        contact &&
+        parsed.customerName &&
+        !genericNames.includes(parsed.customerName) &&
+        (genericNames.includes(contact.name) || contact.name !== parsed.customerName)
+      ) {
+        await databaseService.updateContact(contact.id, { name: parsed.customerName });
+        console.log(`👤 Updated contact name: ${contact.name} → ${parsed.customerName}`);
+      }
+
+      // Update conversation property_name if parser found booking info
+      if (parsed.propertyName && !conversation.property_name) {
+        await databaseService.updateConversation(conversation.id, {
+          property_name: parsed.propertyName,
+        });
+        console.log(`🏠 Updated conversation property: ${parsed.propertyName}`);
+      }
+
+      // Update conversation platform_conversation_hash if parser found one and it's missing
+      if (parsed.platformConversationHash && !conversation.platform_conversation_hash) {
+        await databaseService.updateConversation(conversation.id, {
+          platform_conversation_hash: parsed.platformConversationHash,
+        });
+        console.log(`🔑 Updated conversation hash: ${parsed.platformConversationHash}`);
+      }
+
+      // Update contact email from replyToEmail if available
+      if (contact && parsed.replyToEmail && contact.email !== parsed.replyToEmail) {
+        await databaseService.updateContact(contact.id, { email: parsed.replyToEmail });
+        console.log(`📧 Updated contact email: ${contact.email} → ${parsed.replyToEmail}`);
       }
     }
 
-    res.json({ content: parsed.message, originalContent: null });
+    res.json({ content: parsed.message, originalContent: null, customerName: parsed.customerName });
   } catch (error: any) {
     console.error('❌ Error reparsing message:', error);
     res.status(500).json({ error: error.message || 'Reparse failed' });

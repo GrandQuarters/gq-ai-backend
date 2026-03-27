@@ -641,8 +641,15 @@ export class EmailParserService {
       clean = clean.replace(/Nachricht anzeigen.*/gi, '');
       clean = clean.replace(/https?:\/\/\S+/g, '');
       clean = clean.replace(/\n{3,}/g, '\n\n').trim();
-      return clean;
+      guestMessage = clean;
     }
+
+    // Strip FeWo subject headers from message (e.g. "FeWo-direkt.de: Name Antwort auf Ihre Nachricht")
+    guestMessage = guestMessage
+      .replace(/^FeWo-direkt\.de:\s+.+?Antwort auf Ihre Nachricht\s*/i, '')
+      .replace(/^Reservierung\s+(?:für|for)\s+.+?:\s*[\d].*?FeWo-direkt\.de\s*#?\d*\s*/i, '')
+      .replace(/^© \d{4} Vrbo[\s\S]*/im, '')
+      .trim();
 
     if (bookingDetails) {
       return `[BOOKING_INFO]${JSON.stringify(bookingDetails)}[/BOOKING_INFO]\n${guestMessage}`;
