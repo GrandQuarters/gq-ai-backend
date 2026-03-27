@@ -202,6 +202,128 @@ export class GmailService {
     return text.trim();
   }
 
+  async sendNotificationEmail(params: {
+    guestName: string;
+    platform: string;
+    propertyName: string;
+    checkinDate: string;
+    checkoutDate: string;
+    guests: string;
+    messageContent: string;
+    conversationId: string;
+  }): Promise<void> {
+    if (!this.gmail) await this.initialize();
+
+    const notificationAddress = 'gq.guestrelations@gmail.com';
+    const frontendUrl = (process.env.FRONTEND_URL || 'https://gq-ai.vercel.app').split(',')[0].trim();
+    const chatLink = `${frontendUrl}/?conversation=${params.conversationId}`;
+
+    const platformLabel: Record<string, string> = {
+      airbnb: 'Airbnb',
+      booking: 'Booking.com',
+      expedia: 'Expedia',
+      fewo: 'FeWo-direkt',
+      whatsapp: 'WhatsApp',
+      unknown: 'Unbekannt',
+    };
+    const platformName = platformLabel[params.platform] || params.platform;
+
+    const cleanMessage = params.messageContent
+      .replace(/\[BOOKING_INFO\].*?\[\/BOOKING_INFO\]\s*/s, '')
+      .trim();
+
+    const bookingLine = [
+      params.propertyName && `<strong>Unterkunft:</strong> ${params.propertyName}`,
+      params.checkinDate && `<strong>Check-in:</strong> ${params.checkinDate}`,
+      params.checkoutDate && `<strong>Check-out:</strong> ${params.checkoutDate}`,
+      params.guests && `<strong>Gäste:</strong> ${params.guests}`,
+    ].filter(Boolean).join(' &nbsp;|&nbsp; ');
+
+    const subjectProperty = params.propertyName ? ` | ${params.propertyName}` : '';
+    const subjectCheckin = params.checkinDate ? ` | CI: ${params.checkinDate}` : '';
+    const subject = `💬 ${platformName}: ${params.guestName}${subjectProperty}${subjectCheckin}`;
+
+    const htmlBody = `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f5f5f5;font-family:Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f5;padding:24px 0;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+        
+        <!-- Header -->
+        <tr>
+          <td style="background:linear-gradient(135deg,#D4A574,#8B6635);padding:24px 28px;">
+            <p style="margin:0;color:#ffffff;font-size:13px;opacity:0.85;letter-spacing:1px;text-transform:uppercase;">${platformName}</p>
+            <h1 style="margin:4px 0 0;color:#ffffff;font-size:22px;font-weight:700;">Neue Nachricht</h1>
+          </td>
+        </tr>
+
+        <!-- Guest info -->
+        <tr>
+          <td style="padding:24px 28px 0;">
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="background:#fdf6ee;border-left:4px solid #D4A574;border-radius:6px;padding:14px 16px;">
+                  <p style="margin:0 0 4px;font-size:11px;color:#999;text-transform:uppercase;letter-spacing:0.8px;">Gast</p>
+                  <p style="margin:0;font-size:18px;font-weight:700;color:#1a1a1a;">${params.guestName}</p>
+                  ${bookingLine ? `<p style="margin:8px 0 0;font-size:13px;color:#555;">${bookingLine}</p>` : ''}
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Message -->
+        <tr>
+          <td style="padding:20px 28px 0;">
+            <p style="margin:0 0 8px;font-size:11px;color:#999;text-transform:uppercase;letter-spacing:0.8px;">Nachricht</p>
+            <div style="background:#f9f9f9;border-radius:8px;padding:16px;font-size:15px;color:#333;line-height:1.6;white-space:pre-wrap;">${cleanMessage.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+          </td>
+        </tr>
+
+        <!-- CTA Button -->
+        <tr>
+          <td style="padding:24px 28px 28px;text-align:center;">
+            <a href="${chatLink}" style="display:inline-block;background:linear-gradient(135deg,#D4A574,#8B6635);color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:8px;font-size:15px;font-weight:600;letter-spacing:0.3px;">
+              Zum Chat öffnen →
+            </a>
+            <p style="margin:12px 0 0;font-size:12px;color:#aaa;">Grand Quarters · Gästemanagement</p>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+    const emailLines = [
+      `From: Grand Quarters <${process.env.GMAIL_USER || 'me'}>`,
+      `To: ${notificationAddress}`,
+      `Subject: =?UTF-8?B?${Buffer.from(subject).toString('base64')}?=`,
+      `MIME-Version: 1.0`,
+      `Content-Type: text/html; charset=UTF-8`,
+      `Content-Transfer-Encoding: base64`,
+      ``,
+      Buffer.from(htmlBody).toString('base64'),
+    ];
+
+    const raw = emailLines.join('\r\n');
+    const encodedEmail = Buffer.from(raw)
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+
+    await this.gmail!.users.messages.send({
+      userId: 'me',
+      requestBody: { raw: encodedEmail },
+    });
+
+    console.log(`📩 Notification email sent to ${notificationAddress} for ${params.guestName}`);
+  }
+
   async getNewMessages(): Promise<GmailMessage[]> {
     const platformQuery = 'is:unread from:(express@airbnb.com OR @m.expediapartnercentral.com OR @guest.booking.com OR sender@messages.homeaway.com)';
     const messageList = await this.listMessages(platformQuery, 20);

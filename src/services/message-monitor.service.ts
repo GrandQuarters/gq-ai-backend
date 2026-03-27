@@ -304,6 +304,22 @@ export class MessageMonitorService {
           console.log('💾 AI response saved to DB');
         }
 
+        // Send notification email
+        try {
+          await gmailService.sendNotificationEmail({
+            guestName: contact.name,
+            platform: parsed.platform,
+            propertyName: parsed.propertyName || bookingInfo.apartment || '',
+            checkinDate: bookingInfo.checkinDate || '',
+            checkoutDate: bookingInfo.checkoutDate || '',
+            guests: bookingInfo.guests || '',
+            messageContent: messageContent,
+            conversationId: conversation.id,
+          });
+        } catch (notifErr) {
+          console.error('⚠️ Failed to send notification email:', notifErr);
+        }
+
         // Mark as read
         await gmailService.markAsRead(gmailMessage.id);
 
