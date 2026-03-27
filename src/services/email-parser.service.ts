@@ -57,13 +57,13 @@ export class EmailParserService {
         console.log('🔍 Expedia - From:', from, '→ Hash:', expediaData.hash, 'Email:', expediaData.email);
         break;
       case 'fewo':
-        customerName = this.extractFewoName(subject, body);
+        customerName = this.extractFewoName(subject, body, replyTo || from);
         cleanMessage = this.cleanFewoMessage(body);
-        // Extract hash from Reply-To header (FeWo-direkt/HomeAway uses Reply-To)
+        propertyName = this.extractFewoPropertyId(subject);
         const fewoData = this.extractFewoHash(replyTo || from);
         platformConversationHash = fewoData.hash;
         replyToEmail = fewoData.email;
-        console.log('🔍 FeWo-direkt - Reply-To:', replyTo, '→ Hash:', fewoData.hash, 'Email:', fewoData.email);
+        console.log('🔍 FeWo-direkt - Reply-To:', replyTo, '→ Hash:', fewoData.hash, 'Email:', fewoData.email, 'Name:', customerName, 'PropertyId:', propertyName);
         break;
       default:
         // Generic extraction
@@ -154,6 +154,20 @@ export class EmailParserService {
     return { hash: '', email: '' };
   }
 
+  private extractFewoPropertyId(subject: string): string | undefined {
+    // "Reservierung für Margaret Dobos: 4. Apr. - 17. Apr. 2026 - FeWo-direkt.de #5055774"
+    const bookingIdMatch = subject.match(/#(\d{5,})/);
+    const dateRangeMatch = subject.match(/:\s*([\d]+\.\s*\w+\.?\s*[-–]\s*[\d]+\.\s*\w+\.?\s*\d{4})/);
+
+    if (bookingIdMatch) {
+      return `FeWo#${bookingIdMatch[1]}`;
+    }
+    if (dateRangeMatch) {
+      return `FeWo:${dateRangeMatch[1].replace(/\s+/g, '')}`;
+    }
+    return undefined;
+  }
+
   private extractAirbnbName(subject: string, body: string): string {
     // Airbnb email body format (plain text):
     //    GRAHAM            <-- name (indented, often ALL CAPS)
@@ -232,16 +246,33 @@ export class EmailParserService {
     return 'Expedia Guest';
   }
 
-  private extractFewoName(subject: string, body: string): string {
-    // Best: extract from body "Name Urlauber:\n        Nicky Bonnor" or "Guest name:"
+  private extractFewoName(subject: string, body: string, fromHeader?: string): string {
     const bodyNameMatch = body.match(/(?:Name Urlauber|Guest name)[:\s]*\n\s*(.+)/i);
     if (bodyNameMatch) return bodyNameMatch[1].trim();
 
-    // Subject: "FeWo-direkt.de: NAME Antwort auf Ihre Nachricht"
+    // "FeWo-direkt.de: Margaret Dobos Antwort auf Ihre Nachricht"
     const replyMatch = subject.match(/FeWo-direkt\.de:\s+(.+?)\s+Antwort auf/i);
     if (replyMatch) return replyMatch[1].trim();
 
-    // Subject: "von NAME:" or "from NAME:"
+    // "Reservierung für Margaret Dobos: 4. Apr. - 17. Apr. 2026 - FeWo-direkt.de #5055774"
+    const reservierungMatch = subject.match(/Reservierung\s+(?:für|for)\s+(.+?):/i);
+    if (reservierungMatch) return reservierungMatch[1].trim();
+
+    // "Reservation for Margaret Dobos: ..."
+    const reservationMatch = subject.match(/Reservation\s+(?:for|für)\s+(.+?):/i);
+    if (reservationMatch) return reservationMatch[1].trim();
+
+    // Reply-To header: "Margaret Dobos <hash@messages.homeaway.com>"
+    if (fromHeader) {
+      const headerNameMatch = fromHeader.match(/^"?([^<"]+?)"?\s*</);
+      if (headerNameMatch) {
+        const name = headerNameMatch[1].trim();
+        if (name && name.toLowerCase() !== 'sender' && !name.includes('@')) {
+          return name;
+        }
+      }
+    }
+
     const subjectMatch = subject.match(/(?:von|from)\s+(.+?)(?:\s*:|$)/i);
     if (subjectMatch) return subjectMatch[1].trim();
 

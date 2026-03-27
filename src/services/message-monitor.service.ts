@@ -137,6 +137,11 @@ export class MessageMonitorService {
         let contact = await databaseService.getContactByEmail(emailToUse);
         if (!contact) {
           contact = await databaseService.getContactByNameAndPlatform(parsed.customerName, parsed.platform);
+          if (contact && emailToUse && contact.email !== emailToUse) {
+            console.log(`🔄 Contact "${contact.name}" matched by name but hash changed: "${contact.email}" → "${emailToUse}". Updating.`);
+            await databaseService.updateContact(contact.id, { email: emailToUse });
+            contact.email = emailToUse;
+          }
         }
         if (!contact) {
           contact = await databaseService.createContact({
