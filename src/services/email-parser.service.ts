@@ -454,6 +454,7 @@ export class EmailParserService {
       [/Unterkunftsname:\s*(.+)/i, 'property'],
       [/Gesamtzahl der G(?:ä|ae?)ste:\s*(\d+)/i, 'guests'],
       [/Gesamtzahl der Zimmer:\s*(\d+)/i, 'rooms'],
+      [/Name des Gastes:\s*(.+)/i, 'guestName'],
     ];
 
     for (const [regex, key] of fields) {
@@ -474,14 +475,36 @@ export class EmailParserService {
     const bookingDetails = this.extractBookingDetails(body);
 
     // Extract guest message between "Nachricht von NAME:" / "Message from NAME:" 
-    // and "Antworten" / "Reply" (the reply button)
+    // and various end markers (reply button, action buttons, separator lines)
     const msgStart = body.match(/(?:Nachricht von|Message from)\s+.+?:\s*\n/i);
-    const msgEnd = body.match(/\n\s*Antworten\s*\n|\n\s*Reply\s*\n/i);
+    
+    // Try multiple end markers in priority order
+    const endPatterns = [
+      /\n\s*Antworten\s*\n/i,
+      /\n\s*Reply\s*\n/i,
+      /\n\s*Kostenlos akzeptieren\s*\n/i,
+      /\n\s*Accept for free\s*\n/i,
+      /\n\s*_{5,}\s*\n/,
+      /\n\s*-{5,}\s*\n/,
+      /\n\s*Buchungsangaben\s*\n/i,
+      /\n\s*Booking details\s*\n/i,
+    ];
 
     let guestMessage = '';
-    if (msgStart && msgEnd && msgStart.index !== undefined && msgEnd.index !== undefined) {
+    if (msgStart && msgStart.index !== undefined) {
       const startIdx = msgStart.index + msgStart[0].length;
-      const endIdx = msgEnd.index;
+      let endIdx = body.length;
+
+      for (const pattern of endPatterns) {
+        const endMatch = body.substring(startIdx).match(pattern);
+        if (endMatch && endMatch.index !== undefined) {
+          const candidateEnd = startIdx + endMatch.index;
+          if (candidateEnd < endIdx) {
+            endIdx = candidateEnd;
+          }
+        }
+      }
+
       if (startIdx < endIdx) {
         guestMessage = body.substring(startIdx, endIdx).trim();
         guestMessage = guestMessage.replace(/https?:\/\/\S+/g, '');
