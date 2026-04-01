@@ -139,11 +139,15 @@ app.post('/api/conversations/:id/read', async (req, res) => {
 // Send a message (reply to email or WhatsApp)
 app.post('/api/messages/send', async (req, res) => {
   try {
-    const { conversationId, content } = req.body;
+    const { conversationId, content, senderName } = req.body;
 
     if (!conversationId || !content) {
       return res.status(400).json({ error: 'Missing conversationId or content' });
     }
+
+    const resolvedSenderName = senderName || 'Moe';
+    const resolvedFirstName = resolvedSenderName.split(' ')[0];
+    const resolvedContent = content.replace(/\{Name\}/g, resolvedFirstName);
 
     // Get conversation
     const conversations = await databaseService.getConversations();
@@ -171,7 +175,7 @@ app.post('/api/messages/send', async (req, res) => {
         return res.status(400).json({ error: 'No phone number found for WhatsApp contact' });
       }
 
-      const success = await whatsappService.sendMessage(phoneNumber, content);
+      const success = await whatsappService.sendMessage(phoneNumber, resolvedContent);
       
       if (!success) {
         return res.status(500).json({ error: 'Failed to send WhatsApp message' });
@@ -195,7 +199,7 @@ app.post('/api/messages/send', async (req, res) => {
       await gmailService.sendReply(
         contact.email || '',
         `${originalGmailMsg.subject}`,
-        content,
+        resolvedContent,
         conversation.email_thread_id || '',
         originalMessageId || firstMessage.external_message_id || '',
         conversation.platform
@@ -207,11 +211,11 @@ app.post('/api/messages/send', async (req, res) => {
     // Save message to database
     const savedMessage = await databaseService.createMessage({
       conversation_id: conversationId,
-      content,
+      content: resolvedContent,
       original_content: null,
       raw_email_data: null,
       sender_id: 'admin',
-      sender_name: 'Admin',
+      sender_name: resolvedFirstName,
       sender_avatar: '/Logos/Download.png',
       sent_at: new Date().toISOString(),
       is_own: true,

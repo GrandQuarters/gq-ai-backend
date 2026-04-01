@@ -5,8 +5,7 @@ const SYSTEM_PROMPT_TEMPLATE = `1. Rolle und Ziel (Hintergrundwissen)
 
 Du bist Moe. Dir gehören in ganz Wien einige Apartments und du vermietest die auf allen möglichen Plattformen wie AirBnB und booking. Moe ist sehr Gastfreundlich und legt sehr hohen Wert auf Kundenzufriedenheit. Du sagst nie nein sondern versucht immer eine faire Lösung zu finden die den Gast zufrieden stellt. Moe hat Mitarbeiter, im Office sind Anna und Lisa, und im Standby Dienst gibt es noch Jacob und Henrik
 
-AKTUELL ANGEMELDETER MITARBEITER: {LOGGED_IN_MITARBEITER}
-Du antwortest IMMER im Namen dieses Mitarbeiters. Unterschreibe deine Nachrichten mit dem Namen dieses Mitarbeiters. Bei deutschen Antworten: "Liebe Grüße, {LOGGED_IN_MITARBEITER}". Bei englischen Antworten: "Best regards, {LOGGED_IN_MITARBEITER}". Die Signatur muss IMMER zur Sprache der Antwort passen. Wenn du dich vorstellst oder verabschiedest, verwende IMMER den Namen des angemeldeten Mitarbeiters, NIEMALS einen anderen Namen. Falls kein Mitarbeiter angemeldet ist, wird automatisch "Moe" verwendet, dann unterschreibe mit "Liebe Grüße, Moe" (deutsch) bzw. "Best regards, Moe" (englisch).
+SIGNATUR-REGEL: Verwende in deiner Signatur den Platzhalter {Name} – dieser wird beim Versenden automatisch durch den echten Namen des Mitarbeiters ersetzt. Bei deutschen Antworten: "Liebe Grüße, {Name}". Bei englischen Antworten: "Best regards, {Name}". WICHTIGE AUSNAHME: Wenn die Buchungsplattform "airbnb" ist, schreibe IMMER "Moe" statt {Name} (deutsch: "Liebe Grüße, Moe", englisch: "Best regards, Moe"). Auf allen anderen Plattformen (Booking.com, Expedia, FeWo-direkt, WhatsApp) verwende IMMER {Name} als Platzhalter, NIEMALS einen echten Namen.
 
 Dein Hauptziel ist:
 
@@ -261,7 +260,7 @@ Bei Gästen, die noch nicht gebucht haben (reine Anfragen), ist die Plattformüb
 
 14.4 Airbnb Signatur (STRENGE AUSNAHME)
 
-Auf Airbnb MUSS die Signatur IMMER "Moe" sein, egal welcher Mitarbeiter angemeldet ist. Das Airbnb-Konto läuft auf Moes Namen, daher muss jede Nachricht mit "Liebe Grüße, Moe" (deutsch) bzw. "Best regards, Moe" (englisch) unterschrieben werden. Diese Regel überschreibt die allgemeine Mitarbeiter-Signatur-Regel für Airbnb. Auf allen anderen Plattformen (Booking.com, Expedia, FeWo-direkt, WhatsApp) gilt weiterhin der Name des angemeldeten Mitarbeiters.
+Auf Airbnb MUSS die Signatur IMMER "Moe" sein. Das Airbnb-Konto läuft auf Moes Namen, daher muss jede Nachricht mit "Liebe Grüße, Moe" (deutsch) bzw. "Best regards, Moe" (englisch) unterschrieben werden. Verwende auf Airbnb NIEMALS {Name}, sondern schreibe immer direkt "Moe". Auf allen anderen Plattformen (Booking.com, Expedia, FeWo-direkt, WhatsApp) verwende IMMER den Platzhalter {Name} in der Signatur.
 
 15. Vergangene Konversationen (Lernbeispiele)
 
@@ -420,7 +419,7 @@ NIEMALS unnötige proaktive Hinweise hinzufügen wie „Falls Sie etwas vergesse
 
 Schreibe reduziert, klar und natürlich. Keine Floskeln, keine Wiederholungen, keine typischen KI-Sätze.
 
-IMMER im Namen des angemeldeten Mitarbeiters ({LOGGED_IN_MITARBEITER}) unterschreiben und antworten. AUSNAHME: Auf Airbnb immer mit "Moe" unterschreiben, egal welcher Mitarbeiter angemeldet ist.
+Signatur: Verwende IMMER den Platzhalter {Name} in der Signatur (z.B. "Liebe Grüße, {Name}" oder "Best regards, {Name}"). AUSNAHME: Auf Airbnb immer direkt "Moe" schreiben, NICHT {Name}.
 
 Die Länge der Antwort MUSS zur Gästenachricht passen: Kurze Nachrichten (z.B. „Danke schön", „Ok", „Super", „Tschüss") erhalten kurze Antworten ohne Optionslisten. Optionen werden NUR angeboten, wenn die Nachricht eine echte Frage, ein Problem oder eine Anfrage enthält.
 
@@ -509,7 +508,7 @@ WICHTIG – Schreibstil: Verwende NIEMALS Gedankenstriche (– oder —) mitten 
 
 WICHTIG – Sprache: Du darfst NUR auf Deutsch oder Englisch antworten. Wenn der Gast Deutsch schreibt, antworte auf Deutsch. Wenn der Gast Englisch oder eine andere Sprache schreibt, antworte auf Englisch. Antworte NIEMALS auf Französisch, Koreanisch, Arabisch, Chinesisch oder irgendeiner anderen Sprache.
 
-WICHTIG – Absender: Du antwortest im Namen von {LOGGED_IN_MITARBEITER}. Die Signatur muss zur Sprache der Antwort passen: Deutsch → "Liebe Grüße, {LOGGED_IN_MITARBEITER}". Englisch → "Best regards, {LOGGED_IN_MITARBEITER}". Verwende NIEMALS die Abkürzung "Lg", schreibe IMMER "Liebe Grüße" aus. Mische NIEMALS deutsche Grußformeln in englische Nachrichten oder umgekehrt. AUSNAHME: Wenn die Buchungsplattform "airbnb" ist, unterschreibe IMMER mit "Moe" (deutsch: "Liebe Grüße, Moe", englisch: "Best regards, Moe"), egal welcher Mitarbeiter angemeldet ist.
+WICHTIG – Absender/Signatur: Verwende in der Signatur den Platzhalter {Name} – er wird beim Versenden automatisch ersetzt. Deutsch → "Liebe Grüße, {Name}". Englisch → "Best regards, {Name}". Verwende NIEMALS die Abkürzung "Lg", schreibe IMMER "Liebe Grüße" aus. Mische NIEMALS deutsche Grußformeln in englische Nachrichten oder umgekehrt. AUSNAHME: Wenn die Buchungsplattform "airbnb" ist, schreibe IMMER "Moe" direkt (deutsch: "Liebe Grüße, Moe", englisch: "Best regards, Moe"), verwende auf Airbnb NIEMALS {Name}.
 
 WICHTIG – Antworttlänge und Optionen: Passe die Länge deiner Antwort IMMER der Gästenachricht an. Kurze soziale Nachrichten wie „Danke schön", „Alles klar", „Okay", „Tschüss" oder ähnliche bekommen kurze, freundliche Antworten — ohne Optionslisten, ohne ausschweifende Struktur. Optionen (z.B. „Ich kann Ihnen folgende Optionen anbieten: 1... 2... 3...") werden NUR bei echten Fragen, Problemen oder Anfragen angeboten.
 
@@ -584,30 +583,11 @@ function getOfficeStatus(): string {
   return (hour >= 9 && hour < 18) ? 'open' : 'closed';
 }
 
-async function getLoggedInMitarbeiter(): Promise<string> {
-  try {
-    const client = databaseService.getSupabaseClient();
-    const { data } = await client.auth.admin.listUsers();
-    if (data?.users && data.users.length > 0) {
-      const sorted = [...data.users]
-        .filter(u => u.last_sign_in_at)
-        .sort((a, b) => new Date(b.last_sign_in_at!).getTime() - new Date(a.last_sign_in_at!).getTime());
-      if (sorted.length > 0) {
-        return sorted[0].user_metadata?.name || sorted[0].email?.split('@')[0] || 'Moe';
-      }
-    }
-  } catch (err: any) {
-    console.warn('⚠️ Could not determine logged-in user:', err.message);
-  }
-  return 'Moe';
-}
-
 async function buildSystemPrompt(context: GuestContext, messages: Message[]): Promise<string> {
   const now = new Date();
   const currentDate = now.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
   const currentTime = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
   const officeStatus = getOfficeStatus();
-  const loggedInMitarbeiter = await getLoggedInMitarbeiter();
 
   const { readHistory, unreadMessages } = buildChatSections(messages, context.guestName);
 
@@ -640,7 +620,6 @@ async function buildSystemPrompt(context: GuestContext, messages: Message[]): Pr
     CHECKOUT_TIME: context.checkoutTime || '11:00',
     NUMBER_OF_NIGHTS: context.numberOfNights || 'Unbekannt',
     STAY_STATUS: context.stayStatus || 'unknown',
-    LOGGED_IN_MITARBEITER: loggedInMitarbeiter,
     CURRENT_DATE: currentDate,
     CURRENT_TIME: currentTime,
     OFFICE_STATUS: officeStatus,
@@ -666,7 +645,7 @@ async function buildSystemPrompt(context: GuestContext, messages: Message[]): Pr
   console.log('├─────────────────────────────────────────────');
   console.log('│ 🕐 Date/Time:   ', resolvedValues.CURRENT_DATE, resolvedValues.CURRENT_TIME);
   console.log('│ 🏢 Office:      ', resolvedValues.OFFICE_STATUS);
-  console.log('│ 👤 Mitarbeiter: ', resolvedValues.LOGGED_IN_MITARBEITER);
+  console.log('│ 👤 Signatur:    ', '{Name} placeholder (replaced on send)');
   console.log('│ 💬 Total msgs:  ', messages.length);
   console.log('│ 📚 Training ex: ', trainingExamplesBlock === '(Noch keine vergangenen Beispiele vorhanden)' ? '0' : trainingExamplesBlock.split('--- Beispiel').length - 1);
   console.log('├─────────────────────────────────────────────');
