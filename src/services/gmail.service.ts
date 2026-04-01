@@ -119,31 +119,17 @@ export class GmailService {
     let email: string;
 
     if (platform === 'fewo') {
-      const boundary = `boundary_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      const htmlBody = body
-        .split(/\n\n+/)
-        .map(p => `<p style="margin:0 0 12px 0">${p.replace(/\n/g, '<br>')}</p>`)
-        .join('\n');
-
+      const qpBody = this.encodeQuotedPrintable(body);
       email = [
         `From: ${process.env.GMAIL_USER || 'me'}`,
         `To: ${to}`,
         `In-Reply-To: ${inReplyTo}`,
         `References: ${inReplyTo}`,
         `MIME-Version: 1.0`,
-        `Content-Type: multipart/alternative; boundary="${boundary}"`,
-        '',
-        `--${boundary}`,
         `Content-Type: text/plain; charset=utf-8`,
+        `Content-Transfer-Encoding: quoted-printable`,
         '',
-        body,
-        '',
-        `--${boundary}`,
-        `Content-Type: text/html; charset=utf-8`,
-        '',
-        htmlBody,
-        '',
-        `--${boundary}--`,
+        qpBody,
       ].join('\n');
     } else {
       email = [
@@ -169,6 +155,38 @@ export class GmailService {
         threadId,
       },
     });
+  }
+
+  private encodeQuotedPrintable(text: string): string {
+    return text.split('\n').map(line => {
+      let encoded = '';
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        const code = char.charCodeAt(0);
+        if (code >= 33 && code <= 126 && char !== '=') {
+          encoded += char;
+        } else if (char === ' ' || char === '\t') {
+          encoded += char;
+        } else {
+          const bytes = Buffer.from(char, 'utf-8');
+          for (const byte of bytes) {
+            encoded += '=' + byte.toString(16).toUpperCase().padStart(2, '0');
+          }
+        }
+      }
+      // Soft-wrap long lines at 75 chars (leaving room for = soft break)
+      const wrapped: string[] = [];
+      while (encoded.length > 76) {
+        let cut = 75;
+        // Don't split an encoded sequence (=XX)
+        if (encoded[cut - 1] === '=') cut -= 1;
+        else if (encoded[cut - 2] === '=') cut -= 2;
+        wrapped.push(encoded.substring(0, cut) + '=');
+        encoded = encoded.substring(cut);
+      }
+      wrapped.push(encoded);
+      return wrapped.join('\r\n');
+    }).join('\r\n');
   }
 
   async getMessageIdHeader(messageId: string): Promise<string> {
