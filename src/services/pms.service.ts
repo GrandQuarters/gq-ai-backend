@@ -41,6 +41,45 @@ export class PmsService {
     }
   }
 
+  /**
+   * Fetch PMS data for a Booking.com conversation and write all fields to the DB.
+   * This is the single source of truth for PMS syncing — call it whenever a
+   * booking_number becomes available (new message, reparse, manual bulk sync).
+   */
+  async syncConversationFromPms(
+    conversationId: string,
+    externalBookingId: string,
+    databaseService: import('./database.service').DatabaseService
+  ): Promise<PmsBookingData | null> {
+    try {
+      const pmsData = await this.fetchByExternalBookingId(externalBookingId);
+      if (!pmsData) return null;
+
+      const updates: Record<string, any> = {};
+      if (pmsData.booking_number) updates.booking_number = pmsData.booking_number;
+      if (pmsData.checkin_date) updates.checkin_date = pmsData.checkin_date;
+      if (pmsData.checkout_date) updates.checkout_date = pmsData.checkout_date;
+      if (pmsData.checkin_time) updates.checkin_time = pmsData.checkin_time;
+      if (pmsData.checkout_time) updates.checkout_time = pmsData.checkout_time;
+      if (pmsData.keybox_code) updates.keybox_code = pmsData.keybox_code;
+      if (pmsData.guest_phone) updates.guest_phone = pmsData.guest_phone;
+      if (pmsData.object_name) updates.property_name = pmsData.object_name;
+      if (pmsData.object_name_internal) updates.object_name_internal = pmsData.object_name_internal;
+      if (pmsData.adults !== null) updates.adults = pmsData.adults;
+      if (pmsData.children !== null) updates.children = pmsData.children;
+
+      if (Object.keys(updates).length > 0) {
+        await databaseService.updateConversation(conversationId, updates);
+        console.log(`🏨 PMS: Synced ${Object.keys(updates).length} fields to conversation ${conversationId}`);
+      }
+
+      return pmsData;
+    } catch (error) {
+      console.error('❌ PMS: syncConversationFromPms failed (non-blocking):', error);
+      return null;
+    }
+  }
+
   private parseResponse(data: any): PmsBookingData | null {
     if (!data?.payload?.length) {
       console.log('⚠️ PMS: No booking found in response');

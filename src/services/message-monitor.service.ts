@@ -287,35 +287,26 @@ export class MessageMonitorService {
 
         // Fetch PMS data for Booking.com messages using the external booking number
         if (parsed.platform === 'booking' && bookingInfo.bookingId) {
-          try {
-            const pmsData = await pmsService.fetchByExternalBookingId(bookingInfo.bookingId);
-            if (pmsData) {
-              const pmsUpdates: Record<string, any> = {};
-              if (pmsData.booking_number) pmsUpdates.booking_number = pmsData.booking_number;
-              if (pmsData.checkin_date) pmsUpdates.checkin_date = pmsData.checkin_date;
-              if (pmsData.checkout_date) pmsUpdates.checkout_date = pmsData.checkout_date;
-              if (pmsData.checkin_time) pmsUpdates.checkin_time = pmsData.checkin_time;
-              if (pmsData.checkout_time) pmsUpdates.checkout_time = pmsData.checkout_time;
-              if (pmsData.keybox_code) pmsUpdates.keybox_code = pmsData.keybox_code;
-              if (pmsData.guest_phone) pmsUpdates.guest_phone = pmsData.guest_phone;
-              if (pmsData.object_name) pmsUpdates.property_name = pmsData.object_name;
-              if (pmsData.object_name_internal) pmsUpdates.object_name_internal = pmsData.object_name_internal;
-              if (pmsData.adults !== null) pmsUpdates.adults = pmsData.adults;
-              if (pmsData.children !== null) pmsUpdates.children = pmsData.children;
+          // Persist the external booking number immediately so it's available even if PMS fails
+          if (!conversation.booking_number) {
+            await databaseService.updateConversation(conversation.id, {
+              booking_number: bookingInfo.bookingId,
+            });
+          }
 
-              if (Object.keys(pmsUpdates).length > 0) {
-                await databaseService.updateConversation(conversation.id, pmsUpdates);
-                console.log(`🏨 PMS: Updated conversation ${conversation.id} with ${Object.keys(pmsUpdates).length} fields`);
-              }
+          // Use the centralized PMS sync helper — overwrites all booking detail fields
+          const pmsData = await pmsService.syncConversationFromPms(
+            conversation.id,
+            bookingInfo.bookingId,
+            databaseService
+          );
 
-              // Enrich booking info with PMS data for AI context
-              if (pmsData.checkin_date) bookingInfo.checkinDate = pmsData.checkin_date;
-              if (pmsData.checkout_date) bookingInfo.checkoutDate = pmsData.checkout_date;
-              if (pmsData.object_name) bookingInfo.apartment = pmsData.object_name;
-              if (pmsData.adults) bookingInfo.guests = String(pmsData.adults + (pmsData.children || 0));
-            }
-          } catch (pmsError) {
-            console.error('⚠️ PMS fetch failed (non-blocking):', pmsError);
+          if (pmsData) {
+            // Enrich booking info for AI context with PMS data
+            if (pmsData.checkin_date) bookingInfo.checkinDate = pmsData.checkin_date;
+            if (pmsData.checkout_date) bookingInfo.checkoutDate = pmsData.checkout_date;
+            if (pmsData.object_name) bookingInfo.apartment = pmsData.object_name;
+            if (pmsData.adults) bookingInfo.guests = String(pmsData.adults + (pmsData.children || 0));
           }
         }
 
@@ -441,7 +432,8 @@ export class MessageMonitorService {
       const info = JSON.parse(bookingMatch[1]);
       result.guests = info['Gäste'] || info['Gesamtzahl der Gäste'] || '';
       result.apartment = info['Unterkunftsname'] || info['Objekt'] || '';
-      result.bookingId = info['Buchungsnummer'] || info['Reservierungsnr.'] || '';
+      // Accept all key shapes: parser stores 'reservation', legacy used German keys
+      result.bookingId = info['reservation'] || info['Buchungsnummer'] || info['Reservierungsnr.'] || '';
       result.nights = info['Nächte'] || '';
 
       const zeitraum = info['Zeitraum'] || '';

@@ -379,6 +379,24 @@ app.post('/api/messages/:id/reparse', async (req, res) => {
         await databaseService.updateContact(contact.id, { email: parsed.replyToEmail });
         console.log(`📧 Updated contact email: ${contact.email} → ${parsed.replyToEmail}`);
       }
+
+      // For Booking.com: if the reparsed message now contains a booking number, fire PMS sync
+      if (conversation.platform === 'booking') {
+        const { pmsService } = await import('./services/pms.service');
+        const bookingInfoMatch = parsed.message.match(/\[BOOKING_INFO\](.*?)\[\/BOOKING_INFO\]/s);
+        if (bookingInfoMatch) {
+          try {
+            const info = JSON.parse(bookingInfoMatch[1]);
+            const bookingId = info.reservation || info['Buchungsnummer'] || info['Reservierungsnr.'] || null;
+            if (bookingId) {
+              if (!conversation.booking_number) {
+                await databaseService.updateConversation(conversation.id, { booking_number: bookingId });
+              }
+              await pmsService.syncConversationFromPms(conversation.id, bookingId, databaseService);
+            }
+          } catch { /* ignore parse errors */ }
+        }
+      }
     }
 
     res.json({ content: parsed.message, originalContent: null, customerName: parsed.customerName });
@@ -504,7 +522,7 @@ app.post('/api/pms/sync-all', async (req, res) => {
       const contact = (await databaseService.getContacts()).find(c => c.id === conv.contact_id);
       const convName = contact?.name || 'Unknown';
 
-      // Find booking number from existing DB field or from messages
+      // Find booking number: DB field first, then scan messages
       let bookingId = conv.booking_number;
       if (!bookingId) {
         const msgs = await databaseService.getMessagesByConversation(conv.id);
@@ -513,7 +531,8 @@ app.post('/api/pms/sync-all', async (req, res) => {
           if (match) {
             try {
               const info = JSON.parse(match[1]);
-              bookingId = info.reservation || null;
+              // Accept all key shapes
+              bookingId = info.reservation || info['Buchungsnummer'] || info['Reservierungsnr.'] || null;
               if (bookingId) break;
             } catch { /* skip */ }
           }
@@ -525,30 +544,13 @@ app.post('/api/pms/sync-all', async (req, res) => {
         continue;
       }
 
-      const pmsData = await pmsService.fetchByExternalBookingId(bookingId);
+      const pmsData = await pmsService.syncConversationFromPms(conv.id, bookingId, databaseService);
       if (!pmsData) {
         results.push({ id: conv.id, name: convName, status: 'not_found' });
         continue;
       }
 
-      const updates: Record<string, any> = {};
-      if (pmsData.booking_number) updates.booking_number = pmsData.booking_number;
-      if (pmsData.checkin_date) updates.checkin_date = pmsData.checkin_date;
-      if (pmsData.checkout_date) updates.checkout_date = pmsData.checkout_date;
-      if (pmsData.checkin_time) updates.checkin_time = pmsData.checkin_time;
-      if (pmsData.checkout_time) updates.checkout_time = pmsData.checkout_time;
-      if (pmsData.keybox_code) updates.keybox_code = pmsData.keybox_code;
-      if (pmsData.guest_phone) updates.guest_phone = pmsData.guest_phone;
-      if (pmsData.object_name) updates.property_name = pmsData.object_name;
-      if (pmsData.object_name_internal) updates.object_name_internal = pmsData.object_name_internal;
-      if (pmsData.adults !== null) updates.adults = pmsData.adults;
-      if (pmsData.children !== null) updates.children = pmsData.children;
-
-      if (Object.keys(updates).length > 0) {
-        await databaseService.updateConversation(conv.id, updates);
-      }
-
-      results.push({ id: conv.id, name: convName, status: 'synced', fields: Object.keys(updates).length });
+      results.push({ id: conv.id, name: convName, status: 'synced' });
     }
 
     console.log(`🏨 PMS bulk sync: ${results.filter(r => r.status === 'synced').length}/${bookingConvs.length} synced`);
