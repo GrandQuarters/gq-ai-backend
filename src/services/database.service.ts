@@ -28,6 +28,16 @@ export interface Conversation {
   action_required: boolean;
   created_at: string;
   updated_at: string;
+  booking_number?: string | null;
+  checkin_date?: string | null;
+  checkout_date?: string | null;
+  checkin_time?: string | null;
+  checkout_time?: string | null;
+  keybox_code?: string | null;
+  guest_phone?: string | null;
+  object_name_internal?: string | null;
+  adults?: number | null;
+  children?: number | null;
 }
 
 export interface Message {

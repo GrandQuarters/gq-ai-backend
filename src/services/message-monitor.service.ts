@@ -2,6 +2,7 @@ import { gmailService } from './gmail.service';
 import { emailParserService } from './email-parser.service';
 import { databaseService } from './database.service';
 import { openAIService, GuestContext } from './openai.service';
+import { pmsService } from './pms.service';
 import { WebSocket } from 'ws';
 
 function stripBookingInfo(text: string): string {
@@ -274,6 +275,41 @@ export class MessageMonitorService {
 
         // Build guest context from parsed data and booking info
         const bookingInfo = this.extractBookingInfoFromMessage(messageContent);
+
+        // Fetch PMS data for Booking.com messages using the external booking number
+        if (parsed.platform === 'booking' && bookingInfo.bookingId) {
+          try {
+            const pmsData = await pmsService.fetchByExternalBookingId(bookingInfo.bookingId);
+            if (pmsData) {
+              const pmsUpdates: Record<string, any> = {};
+              if (pmsData.booking_number) pmsUpdates.booking_number = pmsData.booking_number;
+              if (pmsData.checkin_date) pmsUpdates.checkin_date = pmsData.checkin_date;
+              if (pmsData.checkout_date) pmsUpdates.checkout_date = pmsData.checkout_date;
+              if (pmsData.checkin_time) pmsUpdates.checkin_time = pmsData.checkin_time;
+              if (pmsData.checkout_time) pmsUpdates.checkout_time = pmsData.checkout_time;
+              if (pmsData.keybox_code) pmsUpdates.keybox_code = pmsData.keybox_code;
+              if (pmsData.guest_phone) pmsUpdates.guest_phone = pmsData.guest_phone;
+              if (pmsData.object_name) pmsUpdates.property_name = pmsData.object_name;
+              if (pmsData.object_name_internal) pmsUpdates.object_name_internal = pmsData.object_name_internal;
+              if (pmsData.adults !== null) pmsUpdates.adults = pmsData.adults;
+              if (pmsData.children !== null) pmsUpdates.children = pmsData.children;
+
+              if (Object.keys(pmsUpdates).length > 0) {
+                await databaseService.updateConversation(conversation.id, pmsUpdates);
+                console.log(`🏨 PMS: Updated conversation ${conversation.id} with ${Object.keys(pmsUpdates).length} fields`);
+              }
+
+              // Enrich booking info with PMS data for AI context
+              if (pmsData.checkin_date) bookingInfo.checkinDate = pmsData.checkin_date;
+              if (pmsData.checkout_date) bookingInfo.checkoutDate = pmsData.checkout_date;
+              if (pmsData.object_name) bookingInfo.apartment = pmsData.object_name;
+              if (pmsData.adults) bookingInfo.guests = String(pmsData.adults + (pmsData.children || 0));
+            }
+          } catch (pmsError) {
+            console.error('⚠️ PMS fetch failed (non-blocking):', pmsError);
+          }
+        }
+
         const guestContext: GuestContext = {
           guestName: contact.name,
           guestPhone: contact.phone_number || '',

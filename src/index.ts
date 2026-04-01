@@ -59,6 +59,17 @@ app.get('/api/conversations', async (req, res) => {
         pinned: conv.is_pinned,
         online: false,
         readOnly: false,
+        propertyName: conv.property_name || null,
+        bookingNumber: conv.booking_number || null,
+        checkinDate: conv.checkin_date || null,
+        checkoutDate: conv.checkout_date || null,
+        checkinTime: conv.checkin_time || null,
+        checkoutTime: conv.checkout_time || null,
+        keyboxCode: conv.keybox_code || null,
+        guestPhone: conv.guest_phone || null,
+        objectNameInternal: conv.object_name_internal || null,
+        adults: conv.adults || null,
+        children: conv.children || null,
       };
     });
 
