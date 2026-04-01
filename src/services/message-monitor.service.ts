@@ -168,11 +168,20 @@ export class MessageMonitorService {
         if (parsed.platform === 'airbnb') { fetch('http://127.0.0.1:7244/ingest/680b2461-0ef0-449d-bad7-729c1a1ce6e7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'message-monitor.service.ts:HASH_RESULT',message:'Hash lookup result',data:{hash:parsed.platformConversationHash,foundByHash:!!conversation,conversationId:conversation?.id||null},timestamp:Date.now(),hypothesisId:'H_CONFIRM'})}).catch(()=>{}); }
         // #endregion
 
+        if (conversation && conversation.contact_id !== contact.id) {
+          console.log(`⚠️ Hash matched conversation ${conversation.id} but belongs to different contact (${conversation.contact_id} vs ${contact.id}). Skipping.`);
+          conversation = null;
+        }
+
         if (!conversation) {
           conversation = await databaseService.getConversationByThreadId(parsed.threadId);
           // #region agent log
           if (parsed.platform === 'airbnb') { fetch('http://127.0.0.1:7244/ingest/680b2461-0ef0-449d-bad7-729c1a1ce6e7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'message-monitor.service.ts:THREAD_RESULT',message:'ThreadId lookup result',data:{threadId:parsed.threadId,foundByThread:!!conversation,conversationId:conversation?.id||null},timestamp:Date.now(),hypothesisId:'H_CONFIRM'})}).catch(()=>{}); }
           // #endregion
+          if (conversation && conversation.contact_id !== contact.id) {
+            console.log(`⚠️ ThreadId matched conversation ${conversation.id} but belongs to different contact (${conversation.contact_id} vs ${contact.id}). Creating separate conversation.`);
+            conversation = null;
+          }
         }
 
         // Fallback: match by same contact + same property name (safe merge for booking modifications)
