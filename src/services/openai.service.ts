@@ -7,6 +7,10 @@ Du bist Moe. Dir gehören in ganz Wien einige Apartments und du vermietest die a
 
 SIGNATUR-REGEL: Verwende in deiner Signatur den Platzhalter {Name}. Dieser wird beim Versenden automatisch durch den echten Namen des Mitarbeiters ersetzt. Bei deutschen Antworten: "Liebe Grüße, {Name}". Bei englischen Antworten: "Best regards, {Name}". WICHTIGE AUSNAHME: Wenn die Buchungsplattform "airbnb" ist, schreibe IMMER "Moe" statt {Name} (deutsch: "Liebe Grüße, Moe", englisch: "Best regards, Moe"). Auf allen anderen Plattformen (Booking.com, Expedia, FeWo-direkt, WhatsApp) verwende IMMER {Name} als Platzhalter, NIEMALS einen echten Namen.
 
+BEGRÜSSUNGS-REGEL: Aktives Hin-und-Her-Gespräch: {SKIP_GREETING}
+Wenn {SKIP_GREETING} = FALSE: Beginne deine Nachricht IMMER mit einer Begrüßung. Deutsch: "Hallo {GUEST_NAME}, ..." Englisch: "Dear {GUEST_NAME}, ..."
+Wenn {SKIP_GREETING} = TRUE: Es läuft gerade ein aktives Gespräch (Nachrichten von beiden Seiten in den letzten 15 Minuten). Überspringe die Begrüßung und antworte direkt im natürlichen Gesprächsfluss.
+
 Dein Hauptziel ist:
 
 Gäste bestmöglich zu unterstützen
@@ -516,6 +520,8 @@ WICHTIG – Natürlichkeit: WIEDERHOLE oder FASSE NIEMALS zusammen, was der Gast
 
 LETZTE ERINNERUNG: Verwende KEINE Gedankenstriche (– oder —). NIEMALS. Kein einziges Mal. Nutze Punkte, Kommas oder Doppelpunkte statt Gedankenstriche.
 
+LETZTE ERINNERUNG – Begrüßung: Wenn {SKIP_GREETING} = FALSE, beginne mit "Hallo {GUEST_NAME}" (deutsch) oder "Dear {GUEST_NAME}" (englisch). Wenn {SKIP_GREETING} = TRUE, keine Begrüßung, antworte direkt.
+
 Antworte nur mit der Nachricht an den Gast.`;
 
 export interface GuestContext {
@@ -593,6 +599,12 @@ async function buildSystemPrompt(context: GuestContext, messages: Message[]): Pr
 
   const { readHistory, unreadMessages } = buildChatSections(messages, context.guestName);
 
+  const fifteenMinAgo = new Date(now.getTime() - 15 * 60 * 1000);
+  const recentMessages = messages.filter(m => new Date(m.sent_at) >= fifteenMinAgo);
+  const hasRecentGuest = recentMessages.some(m => !m.is_own);
+  const hasRecentOwn = recentMessages.some(m => m.is_own);
+  const activeBackAndForth = hasRecentGuest && hasRecentOwn;
+
   let trainingExamplesBlock = '(Noch keine vergangenen Beispiele vorhanden)';
   try {
     const examples = await databaseService.getTrainingExamples(50);
@@ -625,6 +637,7 @@ async function buildSystemPrompt(context: GuestContext, messages: Message[]): Pr
     CURRENT_DATE: currentDate,
     CURRENT_TIME: currentTime,
     OFFICE_STATUS: officeStatus,
+    SKIP_GREETING: activeBackAndForth ? 'TRUE' : 'FALSE',
   };
 
   console.log('┌─────────────────────────────────────────────');
@@ -648,6 +661,7 @@ async function buildSystemPrompt(context: GuestContext, messages: Message[]): Pr
   console.log('│ 🕐 Date/Time:   ', resolvedValues.CURRENT_DATE, resolvedValues.CURRENT_TIME);
   console.log('│ 🏢 Office:      ', resolvedValues.OFFICE_STATUS);
   console.log('│ 👤 Signatur:    ', '{Name} placeholder (replaced on send)');
+  console.log('│ 👋 Skip Greet:  ', resolvedValues.SKIP_GREETING);
   console.log('│ 💬 Total msgs:  ', messages.length);
   console.log('│ 📚 Training ex: ', trainingExamplesBlock === '(Noch keine vergangenen Beispiele vorhanden)' ? '0' : trainingExamplesBlock.split('--- Beispiel').length - 1);
   console.log('├─────────────────────────────────────────────');
