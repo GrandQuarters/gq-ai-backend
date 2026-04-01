@@ -389,10 +389,26 @@ app.post('/api/messages/:id/reparse', async (req, res) => {
             const info = JSON.parse(bookingInfoMatch[1]);
             const bookingId = info.reservation || info['Buchungsnummer'] || info['Reservierungsnr.'] || null;
             if (bookingId) {
-              if (!conversation.booking_number) {
-                await databaseService.updateConversation(conversation.id, { booking_number: bookingId });
+              const incomingBookingId = String(bookingId).trim();
+              const existingBookingId = (conversation.booking_number || '').trim();
+
+              if (!existingBookingId) {
+                await databaseService.updateConversation(conversation.id, { booking_number: incomingBookingId });
+                console.log(
+                  `📈 PMS booking_number event [POPULATED][REPARSE]: conversation=${conversation.id} old=<empty> new=${incomingBookingId}`
+                );
+              } else if (existingBookingId !== incomingBookingId) {
+                await databaseService.updateConversation(conversation.id, { booking_number: incomingBookingId });
+                console.log(
+                  `📈 PMS booking_number event [CHANGED][REPARSE]: conversation=${conversation.id} old=${existingBookingId} new=${incomingBookingId}`
+                );
+              } else {
+                console.log(
+                  `📉 PMS booking_number event [UNCHANGED][REPARSE]: conversation=${conversation.id} value=${existingBookingId}`
+                );
               }
-              await pmsService.syncConversationFromPms(conversation.id, bookingId, databaseService);
+
+              await pmsService.syncConversationFromPms(conversation.id, incomingBookingId, databaseService);
             }
           } catch { /* ignore parse errors */ }
         }

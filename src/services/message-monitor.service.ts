@@ -287,17 +287,34 @@ export class MessageMonitorService {
 
         // Fetch PMS data for Booking.com messages using the external booking number
         if (parsed.platform === 'booking' && bookingInfo.bookingId) {
-          // Persist the external booking number immediately so it's available even if PMS fails
-          if (!conversation.booking_number) {
+          const incomingBookingId = bookingInfo.bookingId.trim();
+          const existingBookingId = (conversation.booking_number || '').trim();
+
+          // Idempotent booking_number write + explicit change metrics in logs
+          if (!existingBookingId) {
             await databaseService.updateConversation(conversation.id, {
-              booking_number: bookingInfo.bookingId,
+              booking_number: incomingBookingId,
             });
+            console.log(
+              `📈 PMS booking_number event [POPULATED]: conversation=${conversation.id} old=<empty> new=${incomingBookingId}`
+            );
+          } else if (existingBookingId !== incomingBookingId) {
+            await databaseService.updateConversation(conversation.id, {
+              booking_number: incomingBookingId,
+            });
+            console.log(
+              `📈 PMS booking_number event [CHANGED]: conversation=${conversation.id} old=${existingBookingId} new=${incomingBookingId}`
+            );
+          } else {
+            console.log(
+              `📉 PMS booking_number event [UNCHANGED]: conversation=${conversation.id} value=${existingBookingId}`
+            );
           }
 
           // Use the centralized PMS sync helper — overwrites all booking detail fields
           const pmsData = await pmsService.syncConversationFromPms(
             conversation.id,
-            bookingInfo.bookingId,
+            incomingBookingId,
             databaseService
           );
 
