@@ -487,6 +487,74 @@ app.get('/api/action-required', async (req, res) => {
   }
 });
 
+// Bulk PMS sync for all Booking.com conversations
+app.post('/api/pms/sync-all', async (req, res) => {
+  try {
+    const { pmsService } = await import('./services/pms.service');
+    const conversations = await databaseService.getConversations();
+    const bookingConvs = conversations.filter(c => c.platform === 'booking');
+
+    const results: { id: string; name: string; status: string; fields?: number }[] = [];
+
+    for (const conv of bookingConvs) {
+      const contact = (await databaseService.getContacts()).find(c => c.id === conv.contact_id);
+      const convName = contact?.name || 'Unknown';
+
+      // Find booking number from existing DB field or from messages
+      let bookingId = conv.booking_number;
+      if (!bookingId) {
+        const msgs = await databaseService.getMessagesByConversation(conv.id);
+        for (const msg of msgs) {
+          const match = msg.content?.match(/\[BOOKING_INFO\](.*?)\[\/BOOKING_INFO\]/);
+          if (match) {
+            try {
+              const info = JSON.parse(match[1]);
+              bookingId = info.reservation || null;
+              if (bookingId) break;
+            } catch { /* skip */ }
+          }
+        }
+      }
+
+      if (!bookingId) {
+        results.push({ id: conv.id, name: convName, status: 'no_booking_id' });
+        continue;
+      }
+
+      const pmsData = await pmsService.fetchByExternalBookingId(bookingId);
+      if (!pmsData) {
+        results.push({ id: conv.id, name: convName, status: 'not_found' });
+        continue;
+      }
+
+      const updates: Record<string, any> = {};
+      if (pmsData.booking_number) updates.booking_number = pmsData.booking_number;
+      if (pmsData.checkin_date) updates.checkin_date = pmsData.checkin_date;
+      if (pmsData.checkout_date) updates.checkout_date = pmsData.checkout_date;
+      if (pmsData.checkin_time) updates.checkin_time = pmsData.checkin_time;
+      if (pmsData.checkout_time) updates.checkout_time = pmsData.checkout_time;
+      if (pmsData.keybox_code) updates.keybox_code = pmsData.keybox_code;
+      if (pmsData.guest_phone) updates.guest_phone = pmsData.guest_phone;
+      if (pmsData.object_name) updates.property_name = pmsData.object_name;
+      if (pmsData.object_name_internal) updates.object_name_internal = pmsData.object_name_internal;
+      if (pmsData.adults !== null) updates.adults = pmsData.adults;
+      if (pmsData.children !== null) updates.children = pmsData.children;
+
+      if (Object.keys(updates).length > 0) {
+        await databaseService.updateConversation(conv.id, updates);
+      }
+
+      results.push({ id: conv.id, name: convName, status: 'synced', fields: Object.keys(updates).length });
+    }
+
+    console.log(`🏨 PMS bulk sync: ${results.filter(r => r.status === 'synced').length}/${bookingConvs.length} synced`);
+    res.json({ total: bookingConvs.length, results });
+  } catch (error) {
+    console.error('❌ PMS bulk sync error:', error);
+    res.status(500).json({ error: 'PMS sync failed' });
+  }
+});
+
 // ==========================================
 // ADMIN USER MANAGEMENT
 // ==========================================
