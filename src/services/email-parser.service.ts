@@ -649,11 +649,13 @@ export class EmailParserService {
       guestMessage = '';
     }
 
-    // Format 4: plain reply -- message text before the "-------" Vrbo footer
+    // Format 4: plain reply -- message text before the Vrbo footer
     if (!guestMessage && !bookingDetails) {
-      const footerIdx = body.indexOf('-------');
-      if (footerIdx > 0) {
-        guestMessage = body.substring(0, footerIdx).trim();
+      const vrboFooter = body.match(/\n-{3,}Wir sind für Sie da/);
+      const fallbackFooter = vrboFooter ? null : body.match(/\n-{7,}\s*\n/);
+      const footerMatch = vrboFooter || fallbackFooter;
+      if (footerMatch && footerMatch.index !== undefined && footerMatch.index > 0) {
+        guestMessage = body.substring(0, footerMatch.index).trim();
         guestMessage = guestMessage.replace(/https?:\/\/\S+/g, '').replace(/\n{3,}/g, '\n\n').trim();
       }
     }
@@ -662,6 +664,7 @@ export class EmailParserService {
     if (!guestMessage && !bookingDetails) {
       let clean = body;
       clean = clean.replace(/Nachricht anzeigen.*/gi, '');
+      clean = clean.replace(/\n-{3,}Wir sind für Sie da[\s\S]*/m, '');
       clean = clean.replace(/https?:\/\/\S+/g, '');
       clean = clean.replace(/\n{3,}/g, '\n\n').trim();
       guestMessage = clean;
