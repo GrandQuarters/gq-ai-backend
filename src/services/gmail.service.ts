@@ -109,22 +109,53 @@ export class GmailService {
     subject: string,
     body: string,
     threadId: string,
-    inReplyTo: string
+    inReplyTo: string,
+    platform?: string
   ): Promise<void> {
     if (!this.gmail) await this.initialize();
 
-    const emailLines = [
-      `From: ${process.env.GMAIL_USER || 'me'}`,
-      `To: ${to}`,
-      `In-Reply-To: ${inReplyTo}`,
-      `References: ${inReplyTo}`,
-      '',
-      body,
-    ];
-    
-    console.log(`📧 Email headers - From: ${process.env.GMAIL_USER}, To: ${to}`);
+    console.log(`📧 Email headers - From: ${process.env.GMAIL_USER}, To: ${to}, Platform: ${platform || 'unknown'}`);
 
-    const email = emailLines.join('\n');
+    let email: string;
+
+    if (platform === 'fewo') {
+      const boundary = `boundary_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const htmlBody = body
+        .split(/\n\n+/)
+        .map(p => `<p style="margin:0 0 12px 0">${p.replace(/\n/g, '<br>')}</p>`)
+        .join('\n');
+
+      email = [
+        `From: ${process.env.GMAIL_USER || 'me'}`,
+        `To: ${to}`,
+        `In-Reply-To: ${inReplyTo}`,
+        `References: ${inReplyTo}`,
+        `MIME-Version: 1.0`,
+        `Content-Type: multipart/alternative; boundary="${boundary}"`,
+        '',
+        `--${boundary}`,
+        `Content-Type: text/plain; charset=utf-8`,
+        '',
+        body,
+        '',
+        `--${boundary}`,
+        `Content-Type: text/html; charset=utf-8`,
+        '',
+        htmlBody,
+        '',
+        `--${boundary}--`,
+      ].join('\n');
+    } else {
+      email = [
+        `From: ${process.env.GMAIL_USER || 'me'}`,
+        `To: ${to}`,
+        `In-Reply-To: ${inReplyTo}`,
+        `References: ${inReplyTo}`,
+        '',
+        body,
+      ].join('\n');
+    }
+
     const encodedEmail = Buffer.from(email)
       .toString('base64')
       .replace(/\+/g, '-')

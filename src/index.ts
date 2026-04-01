@@ -186,7 +186,8 @@ app.post('/api/messages/send', async (req, res) => {
         `${originalGmailMsg.subject}`,
         content,
         conversation.email_thread_id || '',
-        originalMessageId || firstMessage.external_message_id || ''
+        originalMessageId || firstMessage.external_message_id || '',
+        conversation.platform
       );
       
       console.log(`✅ Sent reply to ${contact.name} at ${contact.email} via Gmail`);
