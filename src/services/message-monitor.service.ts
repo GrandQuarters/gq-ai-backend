@@ -323,6 +323,25 @@ export class MessageMonitorService {
         // Build guest context from parsed data and booking info
         const bookingInfo = this.extractBookingInfoFromMessage(messageContent);
 
+        // Persist FeWo check-in/out to conversation DB fields when parsed from message/subject
+        if (parsed.platform === 'fewo') {
+          const fewoUpdates: Record<string, any> = {};
+          if (bookingInfo.checkinDate && !conversation.checkin_date) {
+            fewoUpdates.checkin_date = bookingInfo.checkinDate;
+          }
+          if (bookingInfo.checkoutDate && !conversation.checkout_date) {
+            fewoUpdates.checkout_date = bookingInfo.checkoutDate;
+          }
+          // Also persist reservation number if available
+          if (bookingInfo.bookingId && !conversation.booking_number) {
+            fewoUpdates.booking_number = bookingInfo.bookingId;
+          }
+          if (Object.keys(fewoUpdates).length > 0) {
+            await databaseService.updateConversation(conversation.id, fewoUpdates);
+            console.log(`📅 FeWo: Persisted booking fields for conversation ${conversation.id}:`, JSON.stringify(fewoUpdates));
+          }
+        }
+
         // Fetch PMS data for Booking.com messages using the external booking number
         if (parsed.platform === 'booking' && bookingInfo.bookingId) {
           const incomingBookingId = bookingInfo.bookingId.trim();

@@ -61,7 +61,7 @@ export class EmailParserService {
         break;
       case 'fewo':
         customerName = this.extractFewoName(subject, body, replyTo || from);
-        cleanMessage = this.cleanFewoMessage(body);
+        cleanMessage = this.cleanFewoMessage(body, subject);
         propertyName = this.extractFewoPropertyId(subject);
         const fewoData = this.extractFewoHash(replyTo || from);
         platformConversationHash = fewoData.hash;
@@ -609,6 +609,28 @@ export class EmailParserService {
     return clean;
   }
 
+  private extractFewoSubjectDates(subject: string): { checkIn?: string; checkOut?: string } | null {
+    // Subject: "Reservierung für Melinda Avent: 2. Apr. - 7. Apr. 2026 - FeWo-direkt.de #..."
+    // Also:    "Reservierung für Name: 4. Apr. - 17. Apr. 2026 - FeWo-direkt.de #..."
+    // Captures: startDay. startMon[.] - endDay. endMon[.] endYear
+    const match = subject.match(
+      /:\s*(\d{1,2}\.\s*[A-Za-zÄÖÜäöü]+\.?)\s*[-–]\s*(\d{1,2}\.\s*[A-Za-zÄÖÜäöü]+\.?\s*\d{4})/
+    );
+    if (!match) return null;
+
+    const startRaw = match[1].trim();
+    const endRaw = match[2].trim();
+
+    // Extract year from end part and apply it to start if missing
+    const yearMatch = endRaw.match(/\d{4}/);
+    const year = yearMatch ? yearMatch[0] : new Date().getFullYear().toString();
+
+    const checkIn = startRaw.includes(year) ? startRaw : `${startRaw} ${year}`;
+    const checkOut = endRaw;
+
+    return { checkIn: checkIn.trim(), checkOut: checkOut.trim() };
+  }
+
   private extractFewoBookingDetails(body: string): Record<string, string> | null {
     const details: Record<string, string> = {};
     const fields: [RegExp, string][] = [
@@ -629,8 +651,18 @@ export class EmailParserService {
     return Object.keys(details).length > 0 ? details : null;
   }
 
-  private cleanFewoMessage(body: string): string {
-    const bookingDetails = this.extractFewoBookingDetails(body);
+  private cleanFewoMessage(body: string, subject?: string): string {
+    const bodyBookingDetails = this.extractFewoBookingDetails(body);
+    const bookingDetails: Record<string, string> = bodyBookingDetails ? { ...bodyBookingDetails } : {};
+
+    // Merge subject-derived check-in/out into booking details if not already present from body
+    if (subject && (!bookingDetails['Check-in'] || !bookingDetails['Check-out'])) {
+      const subjectDates = this.extractFewoSubjectDates(subject);
+      if (subjectDates?.checkIn) bookingDetails['Check-in'] = subjectDates.checkIn;
+      if (subjectDates?.checkOut) bookingDetails['Check-out'] = subjectDates.checkOut;
+    }
+
+    const hasBookingDetails = Object.keys(bookingDetails).length > 0;
     let guestMessage = '';
 
     // Format 1: Buchungsanfrage with "Nachricht des Urlaubers" / "Traveler's message"
@@ -666,7 +698,7 @@ export class EmailParserService {
     }
 
     // Format 4: plain reply -- message text before the Vrbo footer
-    if (!guestMessage && !bookingDetails) {
+    if (!guestMessage && !hasBookingDetails) {
       const vrboFooter = body.match(/\n-{3,}Wir sind für Sie da/);
       const fallbackFooter = vrboFooter ? null : body.match(/\n-{7,}\s*\n/);
       const footerMatch = vrboFooter || fallbackFooter;
@@ -677,7 +709,7 @@ export class EmailParserService {
     }
 
     // Fallback
-    if (!guestMessage && !bookingDetails) {
+    if (!guestMessage && !hasBookingDetails) {
       let clean = body;
       clean = clean.replace(/Nachricht anzeigen.*/gi, '');
       clean = clean.replace(/\n-{3,}Wir sind für Sie da[\s\S]*/m, '');
@@ -693,7 +725,7 @@ export class EmailParserService {
       .replace(/^© \d{4} Vrbo[\s\S]*/im, '')
       .trim();
 
-    if (bookingDetails) {
+    if (hasBookingDetails) {
       return `[BOOKING_INFO]${JSON.stringify(bookingDetails)}[/BOOKING_INFO]\n${guestMessage}`;
     }
 
