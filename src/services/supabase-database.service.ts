@@ -12,6 +12,7 @@ export interface Contact {
   email: string | null;
   phone_number: string | null;
   avatar: string;
+  booking_url?: string | null;
   created_at: string;
   last_message_at: string;
 }
@@ -129,6 +130,22 @@ export class SupabaseDatabaseService {
     return data;
   }
 
+  async getContactByPlatformAndBookingUrl(platform: string, bookingUrl: string, excludeContactId?: string): Promise<Contact | null> {
+    let query = this.supabase
+      .from('contacts')
+      .select('*')
+      .eq('platform', platform)
+      .eq('booking_url', bookingUrl);
+
+    if (excludeContactId) {
+      query = query.neq('id', excludeContactId);
+    }
+
+    const { data, error } = await query.maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
   async createContact(contact: Omit<Contact, 'id' | 'created_at' | 'last_message_at'>): Promise<Contact> {
     const { data, error } = await this.supabase
       .from('contacts')
@@ -138,6 +155,7 @@ export class SupabaseDatabaseService {
         email: contact.email,
         phone_number: contact.phone_number,
         avatar: contact.avatar,
+        booking_url: contact.booking_url || null,
       })
       .select()
       .single();

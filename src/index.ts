@@ -380,6 +380,33 @@ app.post('/api/messages/:id/reparse', async (req, res) => {
         console.log(`📧 Updated contact email: ${contact.email} → ${parsed.replyToEmail}`);
       }
 
+      // For Airbnb: reparse can now recover booking_url, so run one merge check
+      if (contact && conversation.platform === 'airbnb' && parsed.bookingUrl) {
+        const incomingBookingUrl = parsed.bookingUrl.trim();
+        const existingBookingUrl = (contact.booking_url || '').trim();
+
+        if (!existingBookingUrl) {
+          await databaseService.updateContact(contact.id, { booking_url: incomingBookingUrl });
+          console.log(`📈 Airbnb booking_url event [POPULATED][REPARSE]: contact=${contact.id} old=<empty> new=${incomingBookingUrl}`);
+        } else if (existingBookingUrl !== incomingBookingUrl) {
+          await databaseService.updateContact(contact.id, { booking_url: incomingBookingUrl });
+          console.log(`📈 Airbnb booking_url event [CHANGED][REPARSE]: contact=${contact.id} old=${existingBookingUrl} new=${incomingBookingUrl}`);
+        } else {
+          console.log(`📉 Airbnb booking_url event [UNCHANGED][REPARSE]: contact=${contact.id} value=${existingBookingUrl}`);
+        }
+
+        const canonicalContact = await databaseService.getContactByPlatformAndBookingUrl(
+          'airbnb',
+          incomingBookingUrl,
+          contact.id
+        );
+
+        if (canonicalContact) {
+          await databaseService.updateConversation(conversation.id, { contact_id: canonicalContact.id });
+          console.log(`🔀 Airbnb booking_url merge [REPARSE]: conversation=${conversation.id} old_contact=${contact.id} canonical_contact=${canonicalContact.id} booking_url=${incomingBookingUrl}`);
+        }
+      }
+
       // For Booking.com: if the reparsed message now contains a booking number, fire PMS sync
       if (conversation.platform === 'booking') {
         const { pmsService } = await import('./services/pms.service');
@@ -411,24 +438,6 @@ app.post('/api/messages/:id/reparse', async (req, res) => {
               await pmsService.syncConversationFromPms(conversation.id, incomingBookingId, databaseService);
             }
           } catch { /* ignore parse errors */ }
-        }
-      }
-
-      // For Airbnb: if the reparsed message now yields a booking_url, persist it and merge any duplicate
-      if (conversation.platform === 'airbnb' && parsed.bookingUrl) {
-        const incomingUrl = parsed.bookingUrl;
-        if (!conversation.booking_url) {
-          await databaseService.updateConversation(conversation.id, { booking_url: incomingUrl });
-          console.log(`📎 [Airbnb][REPARSE] Persisted booking_url on conversation ${conversation.id}: ${incomingUrl}`);
-        }
-        // Check whether another Airbnb conversation already owns this booking_url
-        const existingConv = await databaseService.getConversationByBookingUrl(incomingUrl);
-        if (existingConv && existingConv.id !== conversation.id) {
-          // Merge: keep the older canonical conversation, move children of the newer duplicate
-          const canonicalId = existingConv.id;
-          const duplicateId = conversation.id;
-          console.log(`🔀 [Airbnb][REPARSE] Merging duplicate ${duplicateId} into canonical ${canonicalId}`);
-          await databaseService.mergeAirbnbConversations(canonicalId, duplicateId);
         }
       }
     }

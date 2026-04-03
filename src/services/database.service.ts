@@ -11,6 +11,7 @@ export interface Contact {
   email: string | null;
   phone_number: string | null;
   avatar: string;
+  booking_url?: string | null;
   created_at: string;
   last_message_at: string;
 }
@@ -38,7 +39,6 @@ export interface Conversation {
   object_name_internal?: string | null;
   adults?: number | null;
   children?: number | null;
-  booking_url?: string | null;
 }
 
 export interface Message {
@@ -138,10 +138,27 @@ export class DatabaseService {
         email: contact.email || null,
         phone_number: contact.phone_number || null,
         avatar: contact.avatar,
+        booking_url: contact.booking_url || null,
       })
       .select()
       .single();
 
+    if (error) throw error;
+    return data;
+  }
+
+  async getContactByPlatformAndBookingUrl(platform: string, bookingUrl: string, excludeContactId?: string): Promise<Contact | null> {
+    let query = this.getClient()
+      .from('contacts')
+      .select('*')
+      .eq('platform', platform)
+      .eq('booking_url', bookingUrl);
+
+    if (excludeContactId) {
+      query = query.neq('id', excludeContactId);
+    }
+
+    const { data, error } = await query.maybeSingle();
     if (error) throw error;
     return data;
   }
@@ -217,59 +234,6 @@ export class DatabaseService {
 
     if (error) throw error;
     return data;
-  }
-
-  async getConversationByBookingUrl(bookingUrl: string): Promise<Conversation | null> {
-    const { data, error } = await this.getClient()
-      .from('conversations')
-      .select('*')
-      .eq('booking_url', bookingUrl)
-      .eq('platform', 'airbnb')
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-
-    if (error) throw error;
-    return data;
-  }
-
-  /**
-   * Merge all child rows from `duplicateId` into `canonicalId`, then delete the duplicate.
-   * Used when a reparse or backfill reveals that two Airbnb conversations share the same booking_url.
-   */
-  async mergeAirbnbConversations(canonicalId: string, duplicateId: string): Promise<void> {
-    const client = this.getClient();
-
-    // Move messages
-    const { error: msgErr } = await client
-      .from('messages')
-      .update({ conversation_id: canonicalId })
-      .eq('conversation_id', duplicateId);
-    if (msgErr) throw msgErr;
-
-    // Move ai_responses
-    const { error: aiErr } = await client
-      .from('ai_responses')
-      .update({ conversation_id: canonicalId })
-      .eq('conversation_id', duplicateId);
-    if (aiErr) throw aiErr;
-
-    // Move ai_training_examples if they exist
-    try {
-      await client
-        .from('ai_training_examples')
-        .update({ conversation_id: canonicalId })
-        .eq('conversation_id', duplicateId);
-    } catch { /* table may not have conversation_id — ignore */ }
-
-    // Delete the now-empty duplicate conversation
-    const { error: delErr } = await client
-      .from('conversations')
-      .delete()
-      .eq('id', duplicateId);
-    if (delErr) throw delErr;
-
-    console.log(`🔀 Merged duplicate Airbnb conversation ${duplicateId} → ${canonicalId}`);
   }
 
   async getConversationByContactAndProperty(contactId: string, propertyName: string): Promise<Conversation | null> {
