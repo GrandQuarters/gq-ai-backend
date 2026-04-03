@@ -698,7 +698,7 @@ export class EmailParserService {
     }
 
     // Format 4: plain reply -- message text before the Vrbo footer
-    if (!guestMessage && !hasBookingDetails) {
+    if (!guestMessage) {
       const vrboFooter = body.match(/\n-{3,}Wir sind für Sie da/);
       const fallbackFooter = vrboFooter ? null : body.match(/\n-{7,}\s*\n/);
       const footerMatch = vrboFooter || fallbackFooter;
@@ -709,7 +709,7 @@ export class EmailParserService {
     }
 
     // Fallback
-    if (!guestMessage && !hasBookingDetails) {
+    if (!guestMessage) {
       let clean = body;
       clean = clean.replace(/Nachricht anzeigen.*/gi, '');
       clean = clean.replace(/\n-{3,}Wir sind für Sie da[\s\S]*/m, '');
