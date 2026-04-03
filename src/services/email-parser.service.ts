@@ -12,6 +12,7 @@ export interface ParsedMessage {
   platformConversationHash?: string; // Unique hash from platform (e.g., Airbnb)
   replyToEmail?: string; // The exact email to reply to
   propertyName?: string; // Property name extracted from subject (for safe conversation merging)
+  bookingUrl?: string; // Stable Airbnb hosting thread URL (e.g. https://www.airbnb.at/hosting/thread/12345)
 }
 
 export class EmailParserService {
@@ -23,6 +24,7 @@ export class EmailParserService {
     let platformConversationHash: string | undefined = undefined;
     let replyToEmail: string | undefined = undefined;
     let propertyName: string | undefined = undefined;
+    let bookingUrl: string | undefined = undefined;
 
     switch (platform) {
       case 'airbnb':
@@ -33,7 +35,8 @@ export class EmailParserService {
         const airbnbData = this.extractAirbnbHash(replyTo || from);
         platformConversationHash = airbnbData.hash;
         replyToEmail = airbnbData.email;
-        console.log('🔍 Airbnb - Reply-To:', replyTo, '→ Hash:', airbnbData.hash, 'Email:', airbnbData.email);
+        bookingUrl = this.extractAirbnbBookingUrl(body);
+        console.log('🔍 Airbnb - Reply-To:', replyTo, '→ Hash:', airbnbData.hash, 'Email:', airbnbData.email, 'BookingUrl:', bookingUrl || 'none');
         break;
       case 'booking':
         customerName = this.extractBookingName(subject, body);
@@ -85,6 +88,7 @@ export class EmailParserService {
       platformConversationHash,
       replyToEmail,
       propertyName,
+      bookingUrl,
     };
   }
 
@@ -111,6 +115,18 @@ export class EmailParserService {
     }
 
     return { hash: '', email: '' };
+  }
+
+  private extractAirbnbBookingUrl(body: string): string | undefined {
+    // Find the Antworten / Reply link in the email body.
+    // Format: [https://www.airbnb.at/hosting/thread/1234567890?...]
+    // We want everything before the ? so the URL is stable across emails for the same booking.
+    const match = body.match(/https?:\/\/www\.airbnb\.[a-z]+\/hosting\/thread\/(\d+)/);
+    if (match) {
+      // Normalise to a canonical form: strip trailing query params
+      return `https://www.airbnb.at/hosting/thread/${match[1]}`;
+    }
+    return undefined;
   }
 
   private extractExpediaHash(fromHeader: string): { hash: string; email: string } {

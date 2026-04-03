@@ -134,9 +134,13 @@ export class MessageMonitorService {
           console.log('🔑 Airbnb conversation hash:', parsed.platformConversationHash);
         }
 
-        // Find or create contact (match by email first, then by name+platform)
+        // ── Contact resolution ─────────────────────────────────────────────────
+        // For Airbnb: only match by exact email. Never fall back to name+platform
+        // because Airbnb issues a new reply hash per message, so a hash change
+        // must create a fresh contact (and later the conversation will be moved to it).
+        // For all other platforms: email first, then name+platform as before.
         let contact = await databaseService.getContactByEmail(emailToUse);
-        if (!contact) {
+        if (!contact && parsed.platform !== 'airbnb') {
           contact = await databaseService.getContactByNameAndPlatform(parsed.customerName, parsed.platform);
           if (contact && emailToUse && contact.email !== emailToUse) {
             console.log(`🔄 Contact "${contact.name}" matched by name but hash changed: "${contact.email}" → "${emailToUse}". Updating.`);
@@ -155,52 +159,62 @@ export class MessageMonitorService {
           console.log(`👤 Created new contact: ${contact.name} (${emailToUse})`);
         }
 
-        // Find or create conversation
-        // For Airbnb, match by hash first, then by thread ID
-        // #region agent log
-        if (parsed.platform === 'airbnb') { fetch('http://127.0.0.1:7244/ingest/680b2461-0ef0-449d-bad7-729c1a1ce6e7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'message-monitor.service.ts:CONV_MATCH',message:'Airbnb conversation matching START',data:{name:parsed.customerName,hash:parsed.platformConversationHash,threadId:parsed.threadId,subject:gmailMessage.subject,gmailId:gmailMessage.id,msgPreview:parsed.message.substring(0,150),replyToEmail:parsed.replyToEmail||'none'},timestamp:Date.now(),hypothesisId:'H_CONFIRM'})}).catch(()=>{}); }
-        // #endregion
-        let conversation = parsed.platformConversationHash 
-          ? await databaseService.getConversationByPlatformHash(parsed.platformConversationHash)
-          : null;
-        
-        // #region agent log
-        if (parsed.platform === 'airbnb') { fetch('http://127.0.0.1:7244/ingest/680b2461-0ef0-449d-bad7-729c1a1ce6e7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'message-monitor.service.ts:HASH_RESULT',message:'Hash lookup result',data:{hash:parsed.platformConversationHash,foundByHash:!!conversation,conversationId:conversation?.id||null},timestamp:Date.now(),hypothesisId:'H_CONFIRM'})}).catch(()=>{}); }
-        // #endregion
+        // ── Conversation matching ──────────────────────────────────────────────
+        // Airbnb: ONLY match by booking_url. Never use hash, thread ID, or property.
+        // Other platforms: keep the original hash → thread → property chain.
+        let conversation: typeof contact extends null ? null : Awaited<ReturnType<typeof databaseService.getConversationByPlatformHash>> = null;
 
-        if (conversation && conversation.contact_id !== contact.id) {
-          console.log(`⚠️ Hash matched conversation ${conversation.id} but belongs to different contact (${conversation.contact_id} vs ${contact.id}). Skipping.`);
-          conversation = null;
-        }
+        if (parsed.platform === 'airbnb') {
+          // Booking-URL matcher (primary and only)
+          if (parsed.bookingUrl) {
+            conversation = await databaseService.getConversationByBookingUrl(parsed.bookingUrl);
+            if (conversation) {
+              console.log(`🔗 [Airbnb] Matched conversation ${conversation.id} by booking_url: ${parsed.bookingUrl}`);
+              // Move conversation to the newest contact so replies use the current hash
+              if (conversation.contact_id !== contact.id) {
+                await databaseService.updateConversation(conversation.id, { contact_id: contact.id });
+                conversation.contact_id = contact.id;
+                console.log(`🔀 [Airbnb] Reassigned conversation ${conversation.id} to new contact ${contact.id} (${contact.name})`);
+              }
+            } else {
+              console.log(`🆕 [Airbnb] No conversation found for booking_url: ${parsed.bookingUrl} — will create new`);
+            }
+          } else {
+            console.log(`⚠️ [Airbnb] No booking_url extracted from email — creating new conversation`);
+          }
+        } else {
+          // Non-Airbnb: original hash → thread → property chain
+          conversation = parsed.platformConversationHash
+            ? await databaseService.getConversationByPlatformHash(parsed.platformConversationHash)
+            : null;
 
-        if (!conversation) {
-          conversation = await databaseService.getConversationByThreadId(parsed.threadId);
-          // #region agent log
-          if (parsed.platform === 'airbnb') { fetch('http://127.0.0.1:7244/ingest/680b2461-0ef0-449d-bad7-729c1a1ce6e7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'message-monitor.service.ts:THREAD_RESULT',message:'ThreadId lookup result',data:{threadId:parsed.threadId,foundByThread:!!conversation,conversationId:conversation?.id||null},timestamp:Date.now(),hypothesisId:'H_CONFIRM'})}).catch(()=>{}); }
-          // #endregion
           if (conversation && conversation.contact_id !== contact.id) {
-            console.log(`⚠️ ThreadId matched conversation ${conversation.id} but belongs to different contact (${conversation.contact_id} vs ${contact.id}). Creating separate conversation.`);
+            console.log(`⚠️ Hash matched conversation ${conversation.id} but belongs to different contact. Skipping.`);
             conversation = null;
           }
-        }
 
-        // Fallback: match by same contact + same property name (safe merge for booking modifications)
-        if (!conversation && parsed.propertyName && contact) {
-          conversation = await databaseService.getConversationByContactAndProperty(contact.id, parsed.propertyName);
-          // #region agent log
-          if (parsed.platform === 'airbnb') { fetch('http://127.0.0.1:7244/ingest/680b2461-0ef0-449d-bad7-729c1a1ce6e7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'message-monitor.service.ts:PROPERTY_RESULT',message:'Property+Contact fallback result',data:{contactId:contact.id,propertyName:parsed.propertyName,foundByProperty:!!conversation,conversationId:conversation?.id||null},timestamp:Date.now(),hypothesisId:'H_PROPERTY'})}).catch(()=>{}); }
-          // #endregion
-          if (conversation) {
-            // Update the thread ID so future messages in this new thread also match
-            await databaseService.updateConversation(conversation.id, {
-              email_thread_id: parsed.threadId,
-            });
-            console.log(`🔗 Merged conversation by property: "${parsed.propertyName}" → ${conversation.id}`);
+          if (!conversation) {
+            conversation = await databaseService.getConversationByThreadId(parsed.threadId);
+            if (conversation && conversation.contact_id !== contact.id) {
+              console.log(`⚠️ ThreadId matched conversation ${conversation.id} but belongs to different contact. Creating separate.`);
+              conversation = null;
+            }
+          }
+
+          // Fallback: match by same contact + same property name (safe merge for booking modifications)
+          if (!conversation && parsed.propertyName && contact) {
+            conversation = await databaseService.getConversationByContactAndProperty(contact.id, parsed.propertyName);
+            if (conversation) {
+              await databaseService.updateConversation(conversation.id, {
+                email_thread_id: parsed.threadId,
+              });
+              console.log(`🔗 Merged conversation by property: "${parsed.propertyName}" → ${conversation.id}`);
+            }
           }
         }
         
         if (!conversation) {
-          conversation = await databaseService.createConversation({
+          const newConvData: any = {
             contact_id: contact.id,
             platform: parsed.platform,
             email_thread_id: parsed.threadId,
@@ -210,21 +224,26 @@ export class MessageMonitorService {
             unread_count: 1,
             is_pinned: false,
             action_required: false,
-          });
-          console.log(`💬 Created new conversation: ${conversation.id}${parsed.platformConversationHash ? ' with hash: ' + parsed.platformConversationHash : ''}`);
-          // #region agent log
-          if (parsed.platform === 'airbnb') { fetch('http://127.0.0.1:7244/ingest/680b2461-0ef0-449d-bad7-729c1a1ce6e7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'message-monitor.service.ts:NEW_CONV',message:'CREATED new conversation',data:{conversationId:conversation.id,hash:parsed.platformConversationHash,threadId:parsed.threadId,name:parsed.customerName,subject:gmailMessage.subject,msgPreview:parsed.message.substring(0,150)},timestamp:Date.now(),hypothesisId:'H_CONFIRM'})}).catch(()=>{}); }
-          // #endregion
+          };
+          // Persist booking_url on new Airbnb conversations
+          if (parsed.platform === 'airbnb' && parsed.bookingUrl) {
+            newConvData.booking_url = parsed.bookingUrl;
+          }
+          conversation = await databaseService.createConversation(newConvData);
+          console.log(`💬 Created new conversation: ${conversation.id}${parsed.bookingUrl ? ' booking_url: ' + parsed.bookingUrl : (parsed.platformConversationHash ? ' hash: ' + parsed.platformConversationHash : '')}`);
         } else {
           // Update existing conversation
-          await databaseService.updateConversation(conversation.id, {
+          const updateData: any = {
             last_message: stripBookingInfo(parsed.message).substring(0, 100),
             unread_count: conversation.unread_count + 1,
             action_required: false,
-          });
-          // #region agent log
-          if (parsed.platform === 'airbnb') { fetch('http://127.0.0.1:7244/ingest/680b2461-0ef0-449d-bad7-729c1a1ce6e7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'message-monitor.service.ts:EXISTING_CONV',message:'MATCHED existing conversation',data:{conversationId:conversation.id,hash:parsed.platformConversationHash,threadId:parsed.threadId,name:parsed.customerName,msgPreview:parsed.message.substring(0,150)},timestamp:Date.now(),hypothesisId:'H_CONFIRM'})}).catch(()=>{}); }
-          // #endregion
+          };
+          // Keep booking_url up-to-date if newly extracted
+          if (parsed.platform === 'airbnb' && parsed.bookingUrl && !conversation.booking_url) {
+            updateData.booking_url = parsed.bookingUrl;
+          }
+          await databaseService.updateConversation(conversation.id, updateData);
+          console.log(`✅ [Airbnb] Appended message to conversation ${conversation.id} (${contact.name})`);
         }
 
         // Translate non-German/English messages

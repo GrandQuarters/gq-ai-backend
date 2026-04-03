@@ -413,6 +413,24 @@ app.post('/api/messages/:id/reparse', async (req, res) => {
           } catch { /* ignore parse errors */ }
         }
       }
+
+      // For Airbnb: if the reparsed message now yields a booking_url, persist it and merge any duplicate
+      if (conversation.platform === 'airbnb' && parsed.bookingUrl) {
+        const incomingUrl = parsed.bookingUrl;
+        if (!conversation.booking_url) {
+          await databaseService.updateConversation(conversation.id, { booking_url: incomingUrl });
+          console.log(`📎 [Airbnb][REPARSE] Persisted booking_url on conversation ${conversation.id}: ${incomingUrl}`);
+        }
+        // Check whether another Airbnb conversation already owns this booking_url
+        const existingConv = await databaseService.getConversationByBookingUrl(incomingUrl);
+        if (existingConv && existingConv.id !== conversation.id) {
+          // Merge: keep the older canonical conversation, move children of the newer duplicate
+          const canonicalId = existingConv.id;
+          const duplicateId = conversation.id;
+          console.log(`🔀 [Airbnb][REPARSE] Merging duplicate ${duplicateId} into canonical ${canonicalId}`);
+          await databaseService.mergeAirbnbConversations(canonicalId, duplicateId);
+        }
+      }
     }
 
     res.json({ content: parsed.message, originalContent: null, customerName: parsed.customerName });
