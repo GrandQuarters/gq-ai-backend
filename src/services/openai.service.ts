@@ -470,7 +470,7 @@ Check-out: {CHECKOUT_DATE} {CHECKOUT_TIME}
 Nächte: {NUMBER_OF_NIGHTS}
 
 Aufenthaltsstatus: {STAY_STATUS}
-(upcoming / checked_in / checked_out / cancelled / unknown)
+(upcoming = noch nicht eingecheckt / active = aktuell im Haus / past = bereits ausgecheckt / unknown = keine Buchungsdaten verfügbar)
 
 Aktuelle Zeit
 
@@ -542,6 +542,78 @@ export interface GuestContext {
   checkoutTime: string;
   numberOfNights: string;
   stayStatus: string;
+}
+
+/**
+ * Parse a PMS date string (DD.MM.YYYY or DD. Mon YYYY) into a Date.
+ * Returns null on failure.
+ */
+export function parsePmsDate(raw: string | null | undefined): Date | null {
+  if (!raw) return null;
+  const s = raw.trim();
+
+  // Format: DD.MM.YYYY
+  const numericMatch = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (numericMatch) {
+    const d = new Date(
+      parseInt(numericMatch[3], 10),
+      parseInt(numericMatch[2], 10) - 1,
+      parseInt(numericMatch[1], 10)
+    );
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  // Format: DD. Mon YYYY (e.g. "04. Apr 2026" or "Sa., 04. Apr. 2026")
+  const monthNames: Record<string, number> = {
+    jan: 0, feb: 1, mär: 2, mar: 2, apr: 3, mai: 4, may: 4,
+    jun: 5, jul: 6, aug: 7, sep: 8, okt: 9, oct: 9, nov: 10, dez: 11, dec: 11
+  };
+  const verboseMatch = s.match(/(\d{1,2})\.\s*([A-Za-zäöüÄÖÜ]{3})\.?\s*(\d{4})/);
+  if (verboseMatch) {
+    const month = monthNames[verboseMatch[2].toLowerCase().substring(0, 3)];
+    if (month !== undefined) {
+      const d = new Date(parseInt(verboseMatch[3], 10), month, parseInt(verboseMatch[1], 10));
+      return isNaN(d.getTime()) ? null : d;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Compute numberOfNights and stayStatus from checkin/checkout date strings.
+ */
+export function deriveStayInfo(checkinRaw: string | null | undefined, checkoutRaw: string | null | undefined): {
+  numberOfNights: string;
+  stayStatus: string;
+} {
+  const checkin = parsePmsDate(checkinRaw);
+  const checkout = parsePmsDate(checkoutRaw);
+
+  let numberOfNights = '';
+  let stayStatus = 'unknown';
+
+  if (checkin && checkout) {
+    const msPerDay = 1000 * 60 * 60 * 24;
+    const nights = Math.max(0, Math.round((checkout.getTime() - checkin.getTime()) / msPerDay));
+    numberOfNights = String(nights);
+
+    // stayStatus relative to today (midnight)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const checkinDay = new Date(checkin); checkinDay.setHours(0, 0, 0, 0);
+    const checkoutDay = new Date(checkout); checkoutDay.setHours(0, 0, 0, 0);
+
+    if (today < checkinDay) {
+      stayStatus = 'upcoming';
+    } else if (today >= checkinDay && today < checkoutDay) {
+      stayStatus = 'active';
+    } else {
+      stayStatus = 'past';
+    }
+  }
+
+  return { numberOfNights, stayStatus };
 }
 
 function formatMessageLine(msg: Message, guestName: string): string {

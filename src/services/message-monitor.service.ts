@@ -1,7 +1,7 @@
 import { gmailService } from './gmail.service';
 import { emailParserService } from './email-parser.service';
 import { databaseService } from './database.service';
-import { openAIService, GuestContext } from './openai.service';
+import { openAIService, GuestContext, deriveStayInfo } from './openai.service';
 import { pmsService } from './pms.service';
 import { WebSocket } from 'ws';
 
@@ -370,17 +370,25 @@ export class MessageMonitorService {
           guestPhone: contact.phone_number || '',
           guestEmail: contact.email || '',
           guestLanguage: this.detectLanguage(parsed.message),
-          numberOfGuests: bookingInfo.guests || '',
-          apartmentName: parsed.propertyName || bookingInfo.apartment || '',
-          apartmentAddress: '',
+          numberOfGuests: bookingInfo.guests || (conversation.adults ? String(conversation.adults + (conversation.children || 0)) : ''),
+          apartmentName: parsed.propertyName || bookingInfo.apartment || conversation.property_name || '',
+          apartmentAddress: conversation.object_name_internal || '',
           bookingPlatform: parsed.platform,
-          bookingId: bookingInfo.bookingId || '',
-          checkinDate: bookingInfo.checkinDate || '',
-          checkinTime: '15:00',
-          checkoutDate: bookingInfo.checkoutDate || '',
-          checkoutTime: '11:00',
-          numberOfNights: bookingInfo.nights || '',
-          stayStatus: 'unknown',
+          bookingId: bookingInfo.bookingId || conversation.booking_number || '',
+          checkinDate: bookingInfo.checkinDate || conversation.checkin_date || '',
+          checkinTime: conversation.checkin_time || '15:00',
+          checkoutDate: bookingInfo.checkoutDate || conversation.checkout_date || '',
+          checkoutTime: conversation.checkout_time || '11:00',
+          ...(() => {
+            const resolved = deriveStayInfo(
+              bookingInfo.checkinDate || conversation.checkin_date,
+              bookingInfo.checkoutDate || conversation.checkout_date
+            );
+            return {
+              numberOfNights: resolved.numberOfNights || bookingInfo.nights || '',
+              stayStatus: resolved.stayStatus,
+            };
+          })(),
         };
 
         // Generate AI response with full conversation context

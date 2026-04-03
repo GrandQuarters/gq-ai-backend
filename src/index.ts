@@ -5,7 +5,7 @@ import { WebSocketServer } from 'ws';
 import { gmailService } from './services/gmail.service';
 import { databaseService } from './services/database.service';
 import { messageMonitorService } from './services/message-monitor.service';
-import { openAIService } from './services/openai.service';
+import { openAIService, deriveStayInfo } from './services/openai.service';
 import { emailParserService } from './services/email-parser.service';
 import { whatsappService } from './services/whatsapp.service';
 import { whatsappMonitorService } from './services/whatsapp-monitor.service';
@@ -485,22 +485,30 @@ app.post('/api/conversations/:id/generate-ai', async (req, res) => {
     }
 
     const lastGuestMsg = [...allMessages].reverse().find((m) => !m.is_own);
+
+    const { numberOfNights, stayStatus } = deriveStayInfo(conversation.checkin_date, conversation.checkout_date);
+
+    // Detect guest language from most recent guest message if available
+    const lastGuestMsgText = lastGuestMsg?.content || '';
+    const hasGerman = /[äöüÄÖÜß]|(\b(?:ich|habe|bin|bitte|danke|vielen)\b)/i.test(lastGuestMsgText);
+    const detectedLanguage = hasGerman ? 'Deutsch' : 'Englisch';
+
     const guestContext: import('./services/openai.service').GuestContext = {
       guestName: contact.name,
       guestPhone: contact.phone_number || '',
       guestEmail: contact.email || '',
-      guestLanguage: 'Englisch',
-      numberOfGuests: '',
+      guestLanguage: detectedLanguage,
+      numberOfGuests: conversation.adults ? String(conversation.adults + (conversation.children || 0)) : '',
       apartmentName: conversation.property_name || '',
-      apartmentAddress: '',
+      apartmentAddress: conversation.object_name_internal || '',
       bookingPlatform: conversation.platform,
-      bookingId: '',
-      checkinDate: '',
-      checkinTime: '15:00',
-      checkoutDate: '',
-      checkoutTime: '11:00',
-      numberOfNights: '',
-      stayStatus: 'unknown',
+      bookingId: conversation.booking_number || '',
+      checkinDate: conversation.checkin_date || '',
+      checkinTime: conversation.checkin_time || '15:00',
+      checkoutDate: conversation.checkout_date || '',
+      checkoutTime: conversation.checkout_time || '11:00',
+      numberOfNights,
+      stayStatus,
     };
 
     console.log(`🤖 Manually generating AI response for conversation ${conversationId} (${contact.name})`);
