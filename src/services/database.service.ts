@@ -518,6 +518,58 @@ export class DatabaseService {
     if (error) throw error;
     return data || [];
   }
+
+  async cleanTrainingGuestMessages(): Promise<{
+    total: number;
+    updated: number;
+    unchanged: number;
+    empty_after_clean: number;
+  }> {
+    const { data, error } = await this.getClient()
+      .from('ai_training_examples')
+      .select('id, guest_messages');
+
+    if (error) throw error;
+
+    const rows = data || [];
+    let updated = 0;
+    let unchanged = 0;
+    let emptyAfterClean = 0;
+
+    for (const row of rows) {
+      const original = row.guest_messages || '';
+      const cleaned = original
+        .replace(/\[BOOKING_INFO\].*?\[\/BOOKING_INFO\]\s*/gs, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+
+      // Never delete row content if cleaning would result in empty text.
+      if (!cleaned) {
+        emptyAfterClean += 1;
+        continue;
+      }
+
+      if (cleaned === original) {
+        unchanged += 1;
+        continue;
+      }
+
+      const { error: updateError } = await this.getClient()
+        .from('ai_training_examples')
+        .update({ guest_messages: cleaned })
+        .eq('id', row.id);
+
+      if (updateError) throw updateError;
+      updated += 1;
+    }
+
+    return {
+      total: rows.length,
+      updated,
+      unchanged,
+      empty_after_clean: emptyAfterClean,
+    };
+  }
 }
 
 export const databaseService = new DatabaseService();

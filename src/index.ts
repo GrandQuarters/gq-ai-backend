@@ -617,6 +617,18 @@ app.post('/api/pms/sync-all', async (req, res) => {
   }
 });
 
+// Bulk clean old AI training examples guest_messages by stripping BOOKING_INFO blocks
+app.post('/api/training/clean-guest-messages', async (req, res) => {
+  try {
+    const result = await databaseService.cleanTrainingGuestMessages();
+    console.log(`🧹 Training cleanup: updated=${result.updated}, unchanged=${result.unchanged}, empty_after_clean=${result.empty_after_clean}, total=${result.total}`);
+    res.json(result);
+  } catch (error: any) {
+    console.error('❌ Training cleanup error:', error);
+    res.status(500).json({ error: error.message || 'Training cleanup failed' });
+  }
+});
+
 // ==========================================
 // ADMIN USER MANAGEMENT
 // ==========================================
