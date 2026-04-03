@@ -502,7 +502,7 @@ export class DatabaseService {
     if (error) throw error;
   }
 
-  async getTrainingExamples(limit = 50): Promise<Array<{
+  async getTrainingExamples(limit = 10000): Promise<Array<{
     guest_name: string;
     platform: string;
     guest_messages: string;

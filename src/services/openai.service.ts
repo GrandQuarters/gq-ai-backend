@@ -689,12 +689,14 @@ async function buildSystemPrompt(context: GuestContext, messages: Message[]): Pr
   const activeBackAndForth = hasRecentGuest && hasRecentOwn;
 
   let trainingExamplesBlock = '(Noch keine vergangenen Beispiele vorhanden)';
+  let trainingExamplesCount = 0;
   try {
-    const examples = await databaseService.getTrainingExamples(50);
+    const examples = await databaseService.getTrainingExamples(10000);
+    trainingExamplesCount = examples.length;
     if (examples.length > 0) {
       trainingExamplesBlock = examples.map((ex, i) => {
         const date = new Date(ex.created_at).toLocaleDateString('de-DE');
-        return `--- Beispiel ${i + 1} (${ex.guest_name}, ${ex.platform}, ${date}) ---\nGast:\n${ex.guest_messages}\n\nUnsere Antwort:\n${ex.admin_reply}`;
+        return `=== Trainingsbeispiel ${i + 1} ===\nGast: ${ex.guest_name} (${ex.platform}, ${date})\n\n[Gastnachricht]\n${ex.guest_messages}\n\n[Unsere Antwort]\n${ex.admin_reply}`;
       }).join('\n\n');
     }
   } catch (err: any) {
@@ -746,7 +748,7 @@ async function buildSystemPrompt(context: GuestContext, messages: Message[]): Pr
   console.log('│ 👤 Signatur:    ', '{Name} placeholder (replaced on send)');
   console.log('│ 👋 Skip Greet:  ', resolvedValues.SKIP_GREETING);
   console.log('│ 💬 Total msgs:  ', messages.length);
-  console.log('│ 📚 Training ex: ', trainingExamplesBlock === '(Noch keine vergangenen Beispiele vorhanden)' ? '0' : trainingExamplesBlock.split('--- Beispiel').length - 1);
+  console.log('│ 📚 Training ex: ', trainingExamplesCount);
   console.log('├─────────────────────────────────────────────');
   console.log('│ 📖 Gelesener Chatverlauf:');
   readHistory.split('\n').forEach((line) => console.log('│   ', line));
