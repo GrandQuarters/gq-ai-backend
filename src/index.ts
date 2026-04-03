@@ -244,19 +244,32 @@ app.post('/api/messages/send', async (req, res) => {
         .filter((m) => !m.is_own);
 
       if (unansweredGuest.length > 0) {
-        const guestBlock = unansweredGuest.map((m) => {
-          const text = m.original_content || m.content;
-          return `[${new Date(m.sent_at).toLocaleString('de-DE')}] ${text}`;
-        }).join('\n');
+        const cleanTrainingText = (raw: string): string =>
+          raw
+            .replace(/\[BOOKING_INFO\].*?\[\/BOOKING_INFO\]\s*/s, '')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
 
-        await databaseService.saveTrainingExample({
-          conversation_id: conversationId,
-          platform: conversation.platform,
-          guest_name: contact.name,
-          guest_messages: guestBlock,
-          admin_reply: content,
-        });
-        console.log(`📚 Training example saved: ${unansweredGuest.length} guest msg(s) → admin reply`);
+        const trainingLines = unansweredGuest
+          .map((m) => {
+            const raw = m.original_content || m.content;
+            const cleaned = cleanTrainingText(raw);
+            if (!cleaned) return null;
+            return `[${new Date(m.sent_at).toLocaleString('de-DE')}] ${cleaned}`;
+          })
+          .filter((line): line is string => line !== null);
+
+        if (trainingLines.length > 0) {
+          const guestBlock = trainingLines.join('\n');
+          await databaseService.saveTrainingExample({
+            conversation_id: conversationId,
+            platform: conversation.platform,
+            guest_name: contact.name,
+            guest_messages: guestBlock,
+            admin_reply: content,
+          });
+          console.log(`📚 Training example saved: ${trainingLines.length} guest msg(s) → admin reply`);
+        }
       }
     } catch (trainErr: any) {
       console.warn('⚠️ Failed to save training example:', trainErr.message);
