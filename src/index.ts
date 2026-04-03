@@ -515,6 +515,7 @@ app.post('/api/messages/:id/reparse', async (req, res) => {
           } catch { /* ignore parse errors */ }
         }
       }
+    }
 
     res.json({ content: parsed.message, originalContent: null, customerName: parsed.customerName });
   } catch (error: any) {
