@@ -563,12 +563,14 @@ export function parsePmsDate(raw: string | null | undefined): Date | null {
     return isNaN(d.getTime()) ? null : d;
   }
 
-  // Format: DD. Mon YYYY (e.g. "04. Apr 2026" or "Sa., 04. Apr. 2026")
+  // Format: DD. Mon YYYY (e.g. "04. Apr 2026" or "Sa., 04. Apr. 2026" or "4. April 2026")
   const monthNames: Record<string, number> = {
-    jan: 0, feb: 1, mär: 2, mar: 2, apr: 3, mai: 4, may: 4,
+    jan: 0, jän: 0, feb: 1, mär: 2, mar: 2, apr: 3, mai: 4, may: 4,
     jun: 5, jul: 6, aug: 7, sep: 8, okt: 9, oct: 9, nov: 10, dez: 11, dec: 11
   };
-  const verboseMatch = s.match(/(\d{1,2})\.\s*([A-Za-zäöüÄÖÜ]{3})\.?\s*(\d{4})/);
+  // Match 3+ letter month tokens so full names like "April", "März", "Jänner" are supported;
+  // substring(0,3) lookup maps them to the same 3-letter key.
+  const verboseMatch = s.match(/(\d{1,2})\.\s*([A-Za-zäöüÄÖÜ]{3,})\.?\s*(\d{4})/);
   if (verboseMatch) {
     const month = monthNames[verboseMatch[2].toLowerCase().substring(0, 3)];
     if (month !== undefined) {

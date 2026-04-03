@@ -612,9 +612,9 @@ export class EmailParserService {
   private extractFewoSubjectDates(subject: string): { checkIn?: string; checkOut?: string } | null {
     // Subject: "Reservierung für Melinda Avent: 2. Apr. - 7. Apr. 2026 - FeWo-direkt.de #..."
     // Also:    "Reservierung für Name: 4. Apr. - 17. Apr. 2026 - FeWo-direkt.de #..."
-    // Captures: startDay. startMon[.] - endDay. endMon[.] endYear
+    // Captures: startDay. startMon[.] [-–—] endDay. endMon[.] endYear
     const match = subject.match(
-      /:\s*(\d{1,2}\.\s*[A-Za-zÄÖÜäöü]+\.?)\s*[-–]\s*(\d{1,2}\.\s*[A-Za-zÄÖÜäöü]+\.?\s*\d{4})/
+      /:\s*(\d{1,2}\.\s*[A-Za-zÄÖÜäöü]+\.?)\s*[-–—]\s*(\d{1,2}\.\s*[A-Za-zÄÖÜäöü]+\.?\s*\d{4})/
     );
     if (!match) return null;
 
@@ -654,6 +654,15 @@ export class EmailParserService {
   private cleanFewoMessage(body: string, subject?: string): string {
     const bodyBookingDetails = this.extractFewoBookingDetails(body);
     const bookingDetails: Record<string, string> = bodyBookingDetails ? { ...bodyBookingDetails } : {};
+
+    // If body extracted a 'dates' range (from Zeitraum: field) but no explicit Check-in/Check-out, split it
+    if (bookingDetails['dates'] && (!bookingDetails['Check-in'] || !bookingDetails['Check-out'])) {
+      const dateParts = bookingDetails['dates'].split(/\s*[-–—]\s*/);
+      if (dateParts.length >= 2) {
+        if (!bookingDetails['Check-in']) bookingDetails['Check-in'] = dateParts[0].trim();
+        if (!bookingDetails['Check-out']) bookingDetails['Check-out'] = dateParts[1].replace(/,.*/, '').trim();
+      }
+    }
 
     // Merge subject-derived check-in/out into booking details if not already present from body
     if (subject && (!bookingDetails['Check-in'] || !bookingDetails['Check-out'])) {

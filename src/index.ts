@@ -453,7 +453,68 @@ app.post('/api/messages/:id/reparse', async (req, res) => {
           } catch { /* ignore parse errors */ }
         }
       }
-    }
+
+      // For FeWo: re-apply date persistence from the reparsed message content
+      if (conversation.platform === 'fewo') {
+        const fewoBookingInfoMatch = parsed.message.match(/\[BOOKING_INFO\](.*?)\[\/BOOKING_INFO\]/s);
+        if (fewoBookingInfoMatch) {
+          try {
+            const info = JSON.parse(fewoBookingInfoMatch[1]);
+
+            // Extract check-in/check-out (Check-in/Check-out keys set by parser; dates as fallback)
+            let checkinDate = info['Check-in'] || '';
+            let checkoutDate = info['Check-out'] || '';
+            if (!checkinDate && !checkoutDate && info['dates']) {
+              const dateParts = info['dates'].split(/\s*[-–—]\s*/);
+              if (dateParts.length >= 2) {
+                checkinDate = dateParts[0].trim();
+                checkoutDate = dateParts[1].replace(/,.*/, '').trim();
+              }
+            }
+
+            const fewoUpdates: Record<string, any> = {};
+
+            if (checkinDate) {
+              const existingCheckin = (conversation.checkin_date || '').trim();
+              const incomingCheckin = checkinDate.trim();
+              if (!existingCheckin) {
+                fewoUpdates.checkin_date = incomingCheckin;
+                console.log(`📅 FeWo checkin_date [POPULATED][REPARSE]: conversation=${conversation.id} new=${incomingCheckin}`);
+              } else if (existingCheckin !== incomingCheckin) {
+                fewoUpdates.checkin_date = incomingCheckin;
+                console.log(`📅 FeWo checkin_date [CHANGED][REPARSE]: conversation=${conversation.id} old=${existingCheckin} new=${incomingCheckin}`);
+              } else {
+                console.log(`📅 FeWo checkin_date [UNCHANGED][REPARSE]: conversation=${conversation.id} value=${existingCheckin}`);
+              }
+            }
+
+            if (checkoutDate) {
+              const existingCheckout = (conversation.checkout_date || '').trim();
+              const incomingCheckout = checkoutDate.trim();
+              if (!existingCheckout) {
+                fewoUpdates.checkout_date = incomingCheckout;
+                console.log(`📅 FeWo checkout_date [POPULATED][REPARSE]: conversation=${conversation.id} new=${incomingCheckout}`);
+              } else if (existingCheckout !== incomingCheckout) {
+                fewoUpdates.checkout_date = incomingCheckout;
+                console.log(`📅 FeWo checkout_date [CHANGED][REPARSE]: conversation=${conversation.id} old=${existingCheckout} new=${incomingCheckout}`);
+              } else {
+                console.log(`📅 FeWo checkout_date [UNCHANGED][REPARSE]: conversation=${conversation.id} value=${existingCheckout}`);
+              }
+            }
+
+            const reservationId = info['reservation'] || '';
+            if (reservationId && !conversation.booking_number) {
+              fewoUpdates.booking_number = reservationId;
+              console.log(`📅 FeWo booking_number [POPULATED][REPARSE]: conversation=${conversation.id} new=${reservationId}`);
+            }
+
+            if (Object.keys(fewoUpdates).length > 0) {
+              await databaseService.updateConversation(conversation.id, fewoUpdates);
+              console.log(`📅 FeWo: Persisted booking fields [REPARSE] for conversation ${conversation.id}:`, JSON.stringify(fewoUpdates));
+            }
+          } catch { /* ignore parse errors */ }
+        }
+      }
 
     res.json({ content: parsed.message, originalContent: null, customerName: parsed.customerName });
   } catch (error: any) {
