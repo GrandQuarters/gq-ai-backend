@@ -107,6 +107,12 @@ export class WhatsAppMonitorService {
         is_own: false,
         external_message_id: messageId,
       });
+      if (!savedMessage) {
+        console.error(`[WA_MSG_DUPLICATE] messageId=${messageId} conversationId=${conversation.id} duplicate inbound message ignored`);
+        await whatsappService.markAsRead(messageId);
+        await databaseService.markMessageAsProcessed(messageId, 'whatsapp');
+        return;
+      }
 
       // Update contact last message time
       await databaseService.updateContactLastMessage(contact.id);

@@ -375,14 +375,35 @@ export class GmailService {
 
   async getNewMessages(): Promise<GmailMessage[]> {
     const platformQuery = 'is:unread from:(express@airbnb.com OR @m.expediapartnercentral.com OR @guest.booking.com OR sender@messages.homeaway.com)';
-    const messageList = await this.listMessages(platformQuery, 20);
+    const maxPerRun = 200; // safe cap to avoid overwhelming a single poll run
+    const pageSize = 50;
+
+    const allIds: string[] = [];
+    let pageToken: string | undefined = undefined;
+
+    // Drain all unread pages up to the per-run cap
+    while (true) {
+      if (!this.gmail) await this.initialize();
+      const listResponse: import('googleapis').gmail_v1.Schema$ListMessagesResponse = (
+        await this.gmail!.users.messages.list({
+          userId: 'me',
+          q: platformQuery,
+          maxResults: pageSize,
+          ...(pageToken ? { pageToken } : {}),
+        })
+      ).data;
+      const items = listResponse.messages || [];
+      for (const msg of items) {
+        if (msg.id) allIds.push(msg.id);
+      }
+      pageToken = listResponse.nextPageToken ?? undefined;
+      if (!pageToken || allIds.length >= maxPerRun) break;
+    }
 
     const messages: GmailMessage[] = [];
-    for (const msg of messageList) {
-      if (msg.id) {
-        const fullMessage = await this.getMessage(msg.id);
-        messages.push(fullMessage);
-      }
+    for (const id of allIds.slice(0, maxPerRun)) {
+      const fullMessage = await this.getMessage(id);
+      messages.push(fullMessage);
     }
 
     return messages;

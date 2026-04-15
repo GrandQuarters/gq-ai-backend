@@ -313,7 +313,8 @@ export class DatabaseService {
     }));
   }
 
-  async createMessage(message: Omit<Message, 'id' | 'read_at' | 'delivered_at'>): Promise<Message> {
+  // Returns null when upsert was ignored due to external_message_id duplicate.
+  async createMessage(message: Omit<Message, 'id' | 'read_at' | 'delivered_at'>): Promise<Message | null> {
     const { data, error } = await this.getClient()
       .from('messages')
       .upsert(
@@ -332,9 +333,13 @@ export class DatabaseService {
         { onConflict: 'external_message_id', ignoreDuplicates: true }
       )
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
+
+    // null means a duplicate was ignored — caller should handle this as a no-op
+    if (!data) return null;
+
     return {
       ...data,
       original_content: data.original_content || null,

@@ -11,6 +11,7 @@ function stripBookingInfo(text: string): string {
 
 export class MessageMonitorService {
   private isRunning = false;
+  private isChecking = false; // single-flight guard: prevent overlapping poll runs
   private pollInterval: NodeJS.Timeout | null = null;
   private wsClients: Set<WebSocket> = new Set();
 
@@ -63,17 +64,63 @@ export class MessageMonitorService {
   }
 
   private async checkForNewMessages(): Promise<void> {
+    // Single-flight guard: skip this tick if a previous run is still in progress
+    if (this.isChecking) {
+      console.log('[POLL_SKIPPED_INFLIGHT] Previous run still in progress, skipping tick.');
+      return;
+    }
+    this.isChecking = true;
+
     try {
-      console.log('📬 Checking for new messages...');
+      console.log('[POLL_START] Checking for new messages...');
       const newMessages = await gmailService.getNewMessages();
 
+      if (newMessages.length === 0) {
+        console.log('[POLL_DONE] No new messages');
+        return;
+      }
+
       for (const gmailMessage of newMessages) {
+        // Each message is isolated: an error here does not abort other messages
+        try {
+          await this.processSingleMessage(gmailMessage);
+        } catch (msgErr: any) {
+          const errMsg = msgErr?.message || String(msgErr);
+          const retryable = this.isRetryableProcessingError(msgErr);
+          if (retryable) {
+            console.error(
+              `[MSG_FAILED_RETRYABLE] gmailId=${gmailMessage.id} threadId=${gmailMessage.threadId} platform=${gmailMessage.platform} subject="${gmailMessage.subject}" error=${errMsg}`
+            );
+            // Do NOT mark as processed/read. Message will be retried on next poll.
+          } else {
+            console.error(
+              `[MSG_FAILED_TERMINAL] gmailId=${gmailMessage.id} threadId=${gmailMessage.threadId} platform=${gmailMessage.platform} subject="${gmailMessage.subject}" error=${errMsg}`
+            );
+            // Terminal/unrecoverable path: acknowledge to avoid poison-loop retries.
+            try {
+              await gmailService.markAsRead(gmailMessage.id);
+              await databaseService.markMessageAsProcessed(gmailMessage.id, 'gmail');
+            } catch {
+              /* best effort */
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[POLL_FAILED] Error during poll run:', error);
+    } finally {
+      this.isChecking = false;
+    }
+  }
+
+  private async processSingleMessage(gmailMessage: import('./gmail.service').GmailMessage): Promise<void> {
         // Skip if already processed
         if (await databaseService.isMessageProcessed(gmailMessage.id)) {
-          continue;
+          console.log(`[MSG_DUPLICATE] gmailId=${gmailMessage.id} already processed, skipping.`);
+          return;
         }
 
-        console.log(`📨 New message from ${gmailMessage.platform}:`, gmailMessage.subject);
+        console.log(`[MSG_START] gmailId=${gmailMessage.id} platform=${gmailMessage.platform} subject="${gmailMessage.subject}"`);
 
         // Parse email
         const parsed = emailParserService.parseEmail(gmailMessage);
@@ -85,10 +132,10 @@ export class MessageMonitorService {
 
         // Skip emails with no platform hash -- these can't be matched to a conversation
         if (!parsed.platformConversationHash) {
-          console.log('⏭️  Skipping email (no platform hash found):', gmailMessage.subject);
+          console.log(`[MSG_SKIP_NO_HASH] gmailId=${gmailMessage.id} subject="${gmailMessage.subject}"`);
           await gmailService.markAsRead(gmailMessage.id);
           await databaseService.markMessageAsProcessed(gmailMessage.id, 'gmail');
-          continue;
+          return;
         }
 
         // For Expedia: skip non-Latin messages (original language) -- the English translation
@@ -97,10 +144,10 @@ export class MessageMonitorService {
           const latinChars = (parsed.message.match(/[\p{Script=Latin}\s\d.,!?'"()\-:;]/gu) || []).length;
           const totalChars = parsed.message.replace(/\s/g, '').length;
           if (totalChars > 0 && latinChars / totalChars < 0.5) {
-            console.log('⏭️  Skipping Expedia non-Latin message (translation will arrive separately):', parsed.message.substring(0, 60));
+            console.log(`[MSG_SKIP_NOLATIN] gmailId=${gmailMessage.id} preview="${parsed.message.substring(0, 60)}"`);
             await gmailService.markAsRead(gmailMessage.id);
             await databaseService.markMessageAsProcessed(gmailMessage.id, 'gmail');
-            continue;
+            return;
           }
         }
         
@@ -125,13 +172,12 @@ export class MessageMonitorService {
           return emailMatch ? emailMatch[0] : fromHeader;
         };
 
-        // For Airbnb, use the specific reply-to email with hash
+        // Use the specific reply-to email with hash when available
         const emailToUse = parsed.replyToEmail || extractEmail(parsed.originalFrom);
         console.log('📧 Email to use for contact:', emailToUse);
         
-        // For Airbnb with hash, log the hash
         if (parsed.platformConversationHash) {
-          console.log('🔑 Airbnb conversation hash:', parsed.platformConversationHash);
+          console.log(`🔑 Platform conversation hash (${parsed.platform}):`, parsed.platformConversationHash);
         }
 
         // Find or create contact (match by email first, then by name+platform)
@@ -156,16 +202,10 @@ export class MessageMonitorService {
         }
 
         // ── Airbnb Booking URL merge ─────────────────────────────────────────────
-        // After contact is resolved, store booking_url and check for a duplicate
-        // contact that came from the same booking (Airbnb sometimes issues a new
-        // hash after the booking is confirmed). Both contact rows stay in the DB,
-        // but we route the incoming message into the canonical (older) contact's
-        // conversation so both guests appear in one chat stream.
         if (parsed.platform === 'airbnb' && parsed.bookingUrl) {
           const incomingBookingUrl = parsed.bookingUrl.trim();
           const existingBookingUrl = (contact.booking_url || '').trim();
 
-          // Idempotent booking_url write + explicit change logs
           if (!existingBookingUrl) {
             await databaseService.updateContact(contact.id, { booking_url: incomingBookingUrl });
             contact.booking_url = incomingBookingUrl;
@@ -178,23 +218,20 @@ export class MessageMonitorService {
             console.log(`📉 Airbnb booking_url event [UNCHANGED]: contact=${contact.id} value=${existingBookingUrl}`);
           }
 
-          // Look for another contact with the same booking_url
           const canonicalContact = await databaseService.getContactByPlatformAndBookingUrl(
             'airbnb',
             incomingBookingUrl,
-            contact.id // exclude current contact
+            contact.id
           );
 
           if (canonicalContact) {
             console.log(`🔀 Airbnb booking_url match: merging contact ${contact.id} (${contact.name}) → canonical ${canonicalContact.id} (${canonicalContact.name}) via ${incomingBookingUrl}`);
-            // Route everything through the canonical contact so message lands in the existing chat
             contact = canonicalContact;
           }
         }
         // ────────────────────────────────────────────────────────────────────────
 
         // Find or create conversation
-        // For Airbnb, match by hash first, then by thread ID
         // #region agent log
         if (parsed.platform === 'airbnb') { fetch('http://127.0.0.1:7244/ingest/680b2461-0ef0-449d-bad7-729c1a1ce6e7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'message-monitor.service.ts:CONV_MATCH',message:'Airbnb conversation matching START',data:{name:parsed.customerName,hash:parsed.platformConversationHash,threadId:parsed.threadId,subject:gmailMessage.subject,gmailId:gmailMessage.id,msgPreview:parsed.message.substring(0,150),replyToEmail:parsed.replyToEmail||'none'},timestamp:Date.now(),hypothesisId:'H_CONFIRM'})}).catch(()=>{}); }
         // #endregion
@@ -229,7 +266,6 @@ export class MessageMonitorService {
           if (parsed.platform === 'airbnb') { fetch('http://127.0.0.1:7244/ingest/680b2461-0ef0-449d-bad7-729c1a1ce6e7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'message-monitor.service.ts:PROPERTY_RESULT',message:'Property+Contact fallback result',data:{contactId:contact.id,propertyName:parsed.propertyName,foundByProperty:!!conversation,conversationId:conversation?.id||null},timestamp:Date.now(),hypothesisId:'H_PROPERTY'})}).catch(()=>{}); }
           // #endregion
           if (conversation) {
-            // Update the thread ID so future messages in this new thread also match
             await databaseService.updateConversation(conversation.id, {
               email_thread_id: parsed.threadId,
             });
@@ -237,6 +273,8 @@ export class MessageMonitorService {
           }
         }
         
+        let matchedExistingConversation = false;
+
         if (!conversation) {
           conversation = await databaseService.createConversation({
             contact_id: contact.id,
@@ -254,12 +292,7 @@ export class MessageMonitorService {
           if (parsed.platform === 'airbnb') { fetch('http://127.0.0.1:7244/ingest/680b2461-0ef0-449d-bad7-729c1a1ce6e7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'message-monitor.service.ts:NEW_CONV',message:'CREATED new conversation',data:{conversationId:conversation.id,hash:parsed.platformConversationHash,threadId:parsed.threadId,name:parsed.customerName,subject:gmailMessage.subject,msgPreview:parsed.message.substring(0,150)},timestamp:Date.now(),hypothesisId:'H_CONFIRM'})}).catch(()=>{}); }
           // #endregion
         } else {
-          // Update existing conversation
-          await databaseService.updateConversation(conversation.id, {
-            last_message: stripBookingInfo(parsed.message).substring(0, 100),
-            unread_count: conversation.unread_count + 1,
-            action_required: false,
-          });
+          matchedExistingConversation = true;
           // #region agent log
           if (parsed.platform === 'airbnb') { fetch('http://127.0.0.1:7244/ingest/680b2461-0ef0-449d-bad7-729c1a1ce6e7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'message-monitor.service.ts:EXISTING_CONV',message:'MATCHED existing conversation',data:{conversationId:conversation.id,hash:parsed.platformConversationHash,threadId:parsed.threadId,name:parsed.customerName,msgPreview:parsed.message.substring(0,150)},timestamp:Date.now(),hypothesisId:'H_CONFIRM'})}).catch(()=>{}); }
           // #endregion
@@ -269,7 +302,6 @@ export class MessageMonitorService {
         let messageContent = parsed.message;
         let originalContent: string | null = null;
 
-        // Strip [BOOKING_INFO] before translation so AI doesn't mangle it
         const bookingInfoMatch = parsed.message.match(/^(\[BOOKING_INFO\].*?\[\/BOOKING_INFO\]\n?)([\s\S]*)$/);
         const bookingInfoPrefix = bookingInfoMatch ? bookingInfoMatch[1] : '';
         const textToTranslate = bookingInfoMatch ? bookingInfoMatch[2] : parsed.message;
@@ -303,7 +335,7 @@ export class MessageMonitorService {
           body: gmailMessage.body,
         });
 
-        // Save message
+        // Save message — duplicate-safe: returns null if already saved by a concurrent run
         const savedMessage = await databaseService.createMessage({
           conversation_id: conversation.id,
           content: messageContent,
@@ -316,6 +348,25 @@ export class MessageMonitorService {
           is_own: false,
           external_message_id: parsed.messageId,
         });
+
+        if (!savedMessage) {
+          // Message was already persisted by a concurrent run; treat as success and finalise
+          console.log(
+            `[MSG_DUPLICATE] gmailId=${gmailMessage.id} threadId=${gmailMessage.threadId} conversationId=${conversation.id} message already in DB, skipping AI and marking done.`
+          );
+          await gmailService.markAsRead(gmailMessage.id);
+          await databaseService.markMessageAsProcessed(gmailMessage.id, 'gmail');
+          return;
+        }
+
+        // Message insert succeeded; now safely update existing conversation counters exactly once.
+        if (matchedExistingConversation) {
+          await databaseService.updateConversation(conversation.id, {
+            last_message: stripBookingInfo(messageContent).substring(0, 100),
+            unread_count: conversation.unread_count + 1,
+            action_required: false,
+          });
+        }
 
         // Update contact last message time
         await databaseService.updateContactLastMessage(contact.id);
@@ -371,7 +422,6 @@ export class MessageMonitorService {
           const incomingBookingId = bookingInfo.bookingId.trim();
           const existingBookingId = (conversation.booking_number || '').trim();
 
-          // Idempotent booking_number write + explicit change metrics in logs
           if (!existingBookingId) {
             await databaseService.updateConversation(conversation.id, {
               booking_number: incomingBookingId,
@@ -392,7 +442,6 @@ export class MessageMonitorService {
             );
           }
 
-          // Use the centralized PMS sync helper — overwrites all booking detail fields
           const pmsData = await pmsService.syncConversationFromPms(
             conversation.id,
             incomingBookingId,
@@ -400,7 +449,6 @@ export class MessageMonitorService {
           );
 
           if (pmsData) {
-            // Enrich booking info for AI context with PMS data
             if (pmsData.checkin_date) bookingInfo.checkinDate = pmsData.checkin_date;
             if (pmsData.checkout_date) bookingInfo.checkoutDate = pmsData.checkout_date;
             if (pmsData.object_name) bookingInfo.apartment = pmsData.object_name;
@@ -467,10 +515,8 @@ export class MessageMonitorService {
           console.error('⚠️ Failed to send notification email:', notifErr);
         }
 
-        // Mark as read
+        // Mark as read and processed
         await gmailService.markAsRead(gmailMessage.id);
-
-        // Mark as processed
         await databaseService.markMessageAsProcessed(gmailMessage.id, 'gmail');
 
         // Broadcast to connected clients
@@ -498,15 +544,43 @@ export class MessageMonitorService {
           aiSuggestion: aiResponse,
         });
 
-        console.log(`✅ Processed message from ${parsed.customerName}`);
-      }
+        console.log(
+          `[MSG_DONE] gmailId=${gmailMessage.id} threadId=${gmailMessage.threadId} contact="${parsed.customerName}" conversationId=${conversation.id}`
+        );
+  }
 
-      if (newMessages.length === 0) {
-        console.log('📭 No new messages');
-      }
-    } catch (error) {
-      console.error('❌ Error checking messages:', error);
+  private isRetryableProcessingError(err: unknown): boolean {
+    const anyErr = err as any;
+    const message = String(anyErr?.message || err || '').toLowerCase();
+    const code = String(anyErr?.code || '').toUpperCase();
+    const status = Number(anyErr?.status || anyErr?.statusCode || 0);
+
+    // Explicit transient classes
+    if (status === 429 || status >= 500) return true;
+    if (['ETIMEDOUT', 'ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED'].includes(code)) return true;
+    if (
+      message.includes('timeout') ||
+      message.includes('rate limit') ||
+      message.includes('temporarily unavailable') ||
+      message.includes('network') ||
+      message.includes('connection reset')
+    ) {
+      return true;
     }
+
+    // Explicit terminal classes
+    if (
+      message.includes('invalid input syntax') ||
+      message.includes('permission denied') ||
+      message.includes('row level security') ||
+      message.includes('column') ||
+      message.includes('schema')
+    ) {
+      return false;
+    }
+
+    // Prefer retry for unknown errors to avoid silent message loss.
+    return true;
   }
 
   private detectLanguage(text: string): string {

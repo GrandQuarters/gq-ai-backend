@@ -208,7 +208,7 @@ app.post('/api/messages/send', async (req, res) => {
       console.log(`✅ Sent reply to ${contact.name} at ${contact.email} via Gmail`);
     }
 
-    // Save message to database
+    // Save message to database (is_own:true with no external_message_id should not conflict)
     const savedMessage = await databaseService.createMessage({
       conversation_id: conversationId,
       content: resolvedContent,
@@ -221,6 +221,10 @@ app.post('/api/messages/send', async (req, res) => {
       is_own: true,
       external_message_id: null,
     });
+    if (!savedMessage) {
+      console.error(`[SEND_MSG_FAILED_TERMINAL] conversationId=${conversationId} createMessage returned null for own/admin message`);
+      return res.status(500).json({ error: 'Failed to persist sent message' });
+    }
 
     // Update conversation
     await databaseService.updateConversation(conversationId, {
