@@ -304,89 +304,13 @@ export class EmailParserService {
   }
 
   private cleanAirbnbMessage(body: string): string {
-    // Airbnb email body contains the full conversation thread:
-    //    NAME
-    //    Buchende Person
-    //    newest message text...
-    //
-    //    NAME
-    //    Buchende Person
-    //    older message text...
-    //
-    // We need ONLY the first message (newest) after the first "Buchende Person" / "Guest",
-    // and stop before the NEXT "Buchende Person" / "Guest" block or boilerplate.
-
-    const lines = body.split('\n');
-
-    // Find the first "Buchende Person" / "Guest" / "Gast" line
-    let startLine = -1;
-    for (let i = 0; i < lines.length; i++) {
-      if (/^\s*(?:Buchende Person|Guest|Gast)\s*$/i.test(lines[i])) {
-        startLine = i + 1; // message starts after this line
-        break;
-      }
-    }
-
-    if (startLine === -1) {
-      // Fallback: try to find a greeting
-      const greetingStart = body.search(/(?:Hi|Hello|Hallo|Dear|Liebe|Guten)/i);
-      if (greetingStart !== -1) {
-        return body.substring(greetingStart).split('\n').slice(0, 10).join('\n').trim();
-      }
-      return '';
-    }
-
-    // Collect lines until we hit the NEXT "Buchende Person" / "Guest" block,
-    // a "You:" line (admin reply in thread), or boilerplate
-    const messageLines: string[] = [];
-    for (let i = startLine; i < lines.length; i++) {
-      const trimmed = lines[i].trim();
-
-      // Stop if we hit another "Buchende Person" / "Guest" / "Gast" marker (next message in thread)
-      if (/^(?:Buchende Person|Guest|Gast)$/i.test(trimmed)) break;
-
-      // Stop if we hit a "You:" line (admin reply in the thread)
-      if (/^\s*You:/i.test(lines[i])) break;
-
-      // Stop at boilerplate
-      if (/^Antworten$/i.test(trimmed)) break;
-      if (/^Reply$/i.test(trimmed)) break;
-      if (/^View (?:full )?conversation/i.test(trimmed)) break;
-      if (/^Unterhaltung auf Airbnb anzeigen/i.test(trimmed)) break;
-      if (/^Du kannst auch direkt/i.test(trimmed)) break;
-      if (/^You can also reply directly/i.test(trimmed)) break;
-      if (/^Kommuniziere zu deinem Schutz/i.test(trimmed)) break;
-      if (/^immer über Airbnb/i.test(trimmed)) break;
-      if (/^---+$/.test(trimmed)) break;
-      if (/^_{3,}$/.test(trimmed)) break;
-      if (/^Diese E-Mail/i.test(trimmed)) break;
-      if (/^This email/i.test(trimmed)) break;
-      if (/^Airbnb, Inc\./i.test(trimmed)) break;
-      if (/^©\s*\d{4}\s*Airbnb/i.test(trimmed)) break;
-      if (/^https?:\/\//.test(trimmed)) break;
-      if (/^\[https?:\/\//.test(trimmed)) break;
-
-      // Check if this line is likely a NAME line right before the next "Buchende Person"
-      // (i.e., next non-blank line is "Buchende Person")
-      if (trimmed.length > 0 && trimmed.length < 60 && !/\s{2}/.test(trimmed)) {
-        // Look ahead: skip blank lines and check if "Buchende Person" follows
-        let nextNonBlank = '';
-        for (let k = i + 1; k < lines.length && k <= i + 3; k++) {
-          if (lines[k].trim().length > 0) {
-            nextNonBlank = lines[k].trim();
-            break;
-          }
-        }
-        if (/^(?:Buchende Person|Guest|Gast)$/i.test(nextNonBlank)) {
-          break; // This is a name line for the next message block
-        }
-      }
-
-      messageLines.push(lines[i]);
-    }
-
-    let clean = messageLines.join('\n');
-    clean = clean.replace(/\n{3,}/g, '\n\n').trim();
+    // Airbnb digest emails can contain multiple new guest messages in the same email.
+    // Extract up to the first two guest blocks and merge them into a single chat message,
+    // separated by a blank line, so UI stays one message while preserving both requests.
+    const clean = this.extractAirbnbGuestMessageBlocks(body)
+      .slice(0, 2)
+      .join('\n\n')
+      .trim();
 
     const airbnbDetails = this.extractAirbnbBookingDetails(body);
     if (airbnbDetails) {
@@ -394,6 +318,82 @@ export class EmailParserService {
     }
 
     return clean;
+  }
+
+  private extractAirbnbGuestMessageBlocks(body: string): string[] {
+    const lines = body.split('\n');
+    const markerRegex = /^\s*(?:Buchende Person|Guest|Gast)\s*$/i;
+    const blocks: string[] = [];
+
+    for (let markerIndex = 0; markerIndex < lines.length; markerIndex++) {
+      if (!markerRegex.test(lines[markerIndex])) continue;
+
+      const messageLines: string[] = [];
+      for (let i = markerIndex + 1; i < lines.length; i++) {
+        const rawLine = lines[i];
+        const trimmed = rawLine.trim();
+
+        // Next guest marker means a new message block starts.
+        if (markerRegex.test(trimmed)) break;
+
+        // Stop at admin quote marker.
+        if (/^\s*You:/i.test(rawLine)) break;
+
+        // Stop at standard Airbnb boilerplate.
+        if (this.isAirbnbBoilerplateLine(trimmed)) break;
+
+        // Stop on name line that introduces the next guest block.
+        if (trimmed.length > 0 && trimmed.length < 60 && !/\s{2}/.test(trimmed)) {
+          let nextNonBlank = '';
+          for (let k = i + 1; k < lines.length && k <= i + 3; k++) {
+            const candidate = lines[k].trim();
+            if (candidate.length > 0) {
+              nextNonBlank = candidate;
+              break;
+            }
+          }
+          if (markerRegex.test(nextNonBlank)) break;
+        }
+
+        messageLines.push(rawLine);
+      }
+
+      const block = messageLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+      if (block && !blocks.includes(block)) {
+        blocks.push(block);
+      }
+    }
+
+    if (blocks.length > 0) return blocks;
+
+    // Fallback: try to find a greeting if no structured guest block was found.
+    const greetingStart = body.search(/(?:Hi|Hello|Hallo|Dear|Liebe|Guten)/i);
+    if (greetingStart !== -1) {
+      const greetingBlock = body.substring(greetingStart).split('\n').slice(0, 10).join('\n').trim();
+      return greetingBlock ? [greetingBlock] : [];
+    }
+
+    return [];
+  }
+
+  private isAirbnbBoilerplateLine(trimmedLine: string): boolean {
+    if (/^Antworten$/i.test(trimmedLine)) return true;
+    if (/^Reply$/i.test(trimmedLine)) return true;
+    if (/^View (?:full )?conversation/i.test(trimmedLine)) return true;
+    if (/^Unterhaltung auf Airbnb anzeigen/i.test(trimmedLine)) return true;
+    if (/^Du kannst auch direkt/i.test(trimmedLine)) return true;
+    if (/^You can also reply directly/i.test(trimmedLine)) return true;
+    if (/^Kommuniziere zu deinem Schutz/i.test(trimmedLine)) return true;
+    if (/^immer über Airbnb/i.test(trimmedLine)) return true;
+    if (/^---+$/.test(trimmedLine)) return true;
+    if (/^_{3,}$/.test(trimmedLine)) return true;
+    if (/^Diese E-Mail/i.test(trimmedLine)) return true;
+    if (/^This email/i.test(trimmedLine)) return true;
+    if (/^Airbnb, Inc\./i.test(trimmedLine)) return true;
+    if (/^©\s*\d{4}\s*Airbnb/i.test(trimmedLine)) return true;
+    if (/^https?:\/\//.test(trimmedLine)) return true;
+    if (/^\[https?:\/\//.test(trimmedLine)) return true;
+    return false;
   }
 
   private extractAirbnbBookingDetails(body: string): Record<string, string> | null {
