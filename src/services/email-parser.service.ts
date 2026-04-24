@@ -398,8 +398,8 @@ export class EmailParserService {
   }
 
   private stripAirbnbAutoTranslation(block: string): string {
-    // New Airbnb template can append an auto-translation preview after the original guest text.
-    // Keep only the original text so AI language inference remains accurate.
+    // In Airbnb's translated template, text after this marker is the original guest message.
+    // Keep that original section so UI + AI both use the true source language.
     const markers = [
       /(?:^|\n)\s*Die ursprüngliche Nachricht wurde automatisch übersetzt:\s*(?:\n|$)/i,
       /(?:^|\n)\s*The original message was automatically translated:\s*(?:\n|$)/i,
@@ -408,7 +408,9 @@ export class EmailParserService {
     for (const marker of markers) {
       const match = block.match(marker);
       if (match && match.index !== undefined) {
-        return block.substring(0, match.index).trim();
+        const markerEnd = match.index + match[0].length;
+        const originalSection = block.substring(markerEnd).trim();
+        if (originalSection) return originalSection;
       }
     }
 
