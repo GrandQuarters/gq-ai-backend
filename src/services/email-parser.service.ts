@@ -358,7 +358,8 @@ export class EmailParserService {
         messageLines.push(rawLine);
       }
 
-      const block = messageLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+      const block = this
+        .stripAirbnbAutoTranslation(messageLines.join('\n').replace(/\n{3,}/g, '\n\n').trim());
       if (block && !blocks.includes(block)) {
         blocks.push(block);
       }
@@ -394,6 +395,24 @@ export class EmailParserService {
     if (/^https?:\/\//.test(trimmedLine)) return true;
     if (/^\[https?:\/\//.test(trimmedLine)) return true;
     return false;
+  }
+
+  private stripAirbnbAutoTranslation(block: string): string {
+    // New Airbnb template can append an auto-translation preview after the original guest text.
+    // Keep only the original text so AI language inference remains accurate.
+    const markers = [
+      /(?:^|\n)\s*Die ursprüngliche Nachricht wurde automatisch übersetzt:\s*(?:\n|$)/i,
+      /(?:^|\n)\s*The original message was automatically translated:\s*(?:\n|$)/i,
+    ];
+
+    for (const marker of markers) {
+      const match = block.match(marker);
+      if (match && match.index !== undefined) {
+        return block.substring(0, match.index).trim();
+      }
+    }
+
+    return block.trim();
   }
 
   private extractAirbnbBookingDetails(body: string): Record<string, string> | null {
